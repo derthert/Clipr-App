@@ -150,10 +150,12 @@ export default function App() {
       end: () => playback.seek(selection.end),
       '?': () => setDialog('shortcuts'),
       'shift+?': () => setDialog('shortcuts'),
-      escape: () => setDialog('none'),
     },
     Boolean(source),
   )
+
+  // Escape has to work even before a video is open, since the dialogs do too.
+  useHotkeys({ escape: () => setDialog('none') }, dialog !== 'none')
 
   return (
     <div
@@ -240,7 +242,7 @@ export default function App() {
         <>
           <DropZone onFile={open} onPick={pickFile} busy={busy} error={error} />
           <footer className="footer">
-            <span>Runs locally with ffmpeg.wasm. Your video never leaves this tab.</span>
+            <span>{isDesktop ? 'Cuts with a bundled ffmpeg.' : 'Cuts with ffmpeg.wasm.'}</span>
             <a href={REPO_URL} target="_blank" rel="noreferrer">
               Source
             </a>

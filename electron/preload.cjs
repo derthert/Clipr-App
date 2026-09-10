@@ -26,4 +26,7 @@ contextBridge.exposeInMainWorld('clipr', {
 
   cancel: (id) => ipcRenderer.invoke('clipr:cancel', id),
   reveal: (target) => ipcRenderer.invoke('clipr:reveal', target),
+
+  minimize: () => ipcRenderer.invoke('clipr:window', 'minimize'),
+  close: () => ipcRenderer.invoke('clipr:window', 'close'),
 })

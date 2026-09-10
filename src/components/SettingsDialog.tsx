@@ -5,8 +5,8 @@ import { Field, Segmented, Toggle, type Option } from './controls'
 import { IconClose } from './icons'
 
 const MODES: Option<TrimMode>[] = [
-  { value: 'precise', label: 'Exact', title: 'Frame accurate, re-encodes the selection' },
-  { value: 'copy', label: 'Lossless', title: 'Copies the streams, no re-encode' },
+  { value: 'precise', label: 'Exact' },
+  { value: 'copy', label: 'Lossless' },
 ]
 
 const FORMATS: Option<ExportFormat>[] = [
@@ -18,7 +18,7 @@ const FORMATS: Option<ExportFormat>[] = [
 const QUALITIES: Option<QualityPreset>[] = [
   { value: 'high', label: 'High' },
   { value: 'balanced', label: 'Balanced' },
-  { value: 'small', label: 'Small file' },
+  { value: 'small', label: 'Small' },
 ]
 
 const SIZES: Option<ScalePreset>[] = [
@@ -30,7 +30,7 @@ const SIZES: Option<ScalePreset>[] = [
 
 const MODE_HINTS: Record<TrimMode, string> = {
   precise: 'Exactly the range you picked.',
-  copy: 'Instant and untouched, but the clip can start a moment early, at the nearest keyframe.',
+  copy: 'Instant, but the start snaps to the nearest keyframe.',
 }
 
 interface SettingsDialogProps {
@@ -86,7 +86,7 @@ export function SettingsDialog({
 
           <Field
             label="Format"
-            hint={encoding ? undefined : `Keeps the original container${sourceExtension ? ` (.${sourceExtension})` : ''}`}
+            hint={encoding ? undefined : `Keeps the original${sourceExtension ? ` .${sourceExtension}` : ' format'}`}
           >
             <Segmented
               label="Format"
@@ -122,7 +122,6 @@ export function SettingsDialog({
           {settings.format !== 'gif' ? (
             <Toggle
               label="Mute audio"
-              hint="Drop the sound from the clip"
               checked={settings.muteAudio}
               onChange={(muteAudio) => onChange({ muteAudio })}
             />

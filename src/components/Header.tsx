@@ -1,10 +1,12 @@
-// Top bar: identity on the left, the open file in the middle, tools on the right.
+// Top bar. On the desktop it is also the window title bar, so it carries the window controls.
 
 import type { Preferences, VideoSource } from '../types'
 import { APP_NAME, REPO_URL } from '../config'
+import { isDesktop } from '../lib/desktop'
 import { formatBytes } from '../lib/file'
 import { formatTimecode } from '../lib/time'
-import { IconGithub, IconKeyboard, IconMoon, IconSettings, IconSun } from './icons'
+import { BrandMark, IconGithub, IconKeyboard, IconMoon, IconSettings, IconSun } from './icons'
+import { WindowControls } from './WindowControls'
 
 interface HeaderProps {
   source: VideoSource | null
@@ -24,24 +26,25 @@ export function Header({
   onSettings,
 }: HeaderProps) {
   return (
-    <header className="header">
+    <header className="header" data-desktop={isDesktop}>
       <div className="brand">
-        <span className="brand__mark" aria-hidden="true" />
+        <BrandMark />
         <span className="brand__name">{APP_NAME}</span>
       </div>
 
       {source ? (
-        <div className="filechip">
-          <span className="filechip__name" title={source.file.name}>
-            {source.file.name}
-          </span>
+        <div className="filechip" title={source.path ?? source.file.name}>
+          <span className="filechip__name">{source.file.name}</span>
           <span className="filechip__meta">
-            {source.width}×{source.height} · {formatTimecode(source.duration, false)} ·{' '}
-            {formatBytes(source.size)}
+            <span>{formatTimecode(source.duration, false)}</span>
+            <span>
+              {source.width}×{source.height}
+            </span>
+            <span>{formatBytes(source.size)}</span>
           </span>
         </div>
       ) : (
-        <p className="header__tagline">Trim a slice out of any video, in your browser</p>
+        <p className="header__tagline">Trim a slice out of any video</p>
       )}
 
       <div className="header__tools">
@@ -50,12 +53,7 @@ export function Header({
             Replace video
           </button>
         ) : null}
-        <button
-          type="button"
-          className="iconbutton"
-          onClick={onSettings}
-          title="Export settings"
-        >
+        <button type="button" className="iconbutton" onClick={onSettings} title="Export settings">
           <IconSettings />
         </button>
         <button
@@ -84,6 +82,8 @@ export function Header({
           <IconGithub />
         </a>
       </div>
+
+      <WindowControls />
     </header>
   )
 }

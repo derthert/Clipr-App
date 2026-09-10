@@ -14,32 +14,73 @@
   padding: 14px 20px;
 }
 
+/* On the desktop this bar replaces the native title bar, so it drags the window. */
+
+.header[data-desktop='true'] {
+  height: 44px;
+  padding: 0 0 0 16px;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+}
+
+.header[data-desktop='true'] button,
+.header[data-desktop='true'] a {
+  -webkit-app-region: no-drag;
+}
+
+.header[data-desktop='true'] .header__tools {
+  align-self: stretch;
+  gap: 2px;
+}
+
+.header[data-desktop='true'] .iconbutton {
+  width: 32px;
+  height: 32px;
+}
+
+.wincontrols {
+  display: flex;
+  align-self: stretch;
+  margin-left: 4px;
+}
+
+.wincontrols button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: default;
+  transition: background 0.12s, color 0.12s;
+}
+
+.wincontrols button:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.wincontrols__close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+.header[data-desktop='true'] ~ .workspace {
+  padding-top: 12px;
+}
+
 .brand {
   display: flex;
   align-items: center;
   gap: 9px;
 }
 
-.brand__mark {
-  position: relative;
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  background: linear-gradient(135deg, var(--accent), #46d5ff);
-}
-
-.brand__mark::after {
-  content: '';
-  position: absolute;
-  inset: 6px 7px;
-  border-radius: 2px;
-  background: var(--bg);
-}
-
 .brand__name {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-family: var(--brand);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
 }
 
 .header__tagline {
@@ -53,13 +94,13 @@
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  line-height: 1.35;
+  justify-content: center;
+  gap: 11px;
 }
 
 .filechip__name {
-  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -67,9 +108,21 @@
 }
 
 .filechip__meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding-left: 11px;
+  border-left: 1px solid var(--line-strong);
   color: var(--text-faint);
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.filechip__meta span + span::before {
+  content: '·';
+  margin: 0 6px;
+  opacity: 0.55;
 }
 
 .header__tools {
@@ -139,14 +192,16 @@
 }
 
 .dropzone__card h1 {
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-family: var(--brand);
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
 }
 
 .dropzone__lead {
   max-width: 40ch;
   color: var(--text-dim);
+  text-wrap: balance;
 }
 
 .dropzone__facts {
@@ -867,7 +922,7 @@
   .filechip {
     order: 3;
     width: 100%;
-    align-items: flex-start;
+    justify-content: flex-start;
   }
 
   .header__tagline {

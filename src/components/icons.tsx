@@ -120,6 +120,23 @@ export const IconGithub = (props: { size?: number }) => (
   </Icon>
 )
 
+// The wordmark logo, drawn once here and mirrored by public/favicon.svg.
+export const BrandMark = ({ size = 22 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="clipr-mark" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stopColor="#7c5cff" />
+        <stop offset="1" stopColor="#46d5ff" />
+      </linearGradient>
+    </defs>
+    <rect width="32" height="32" rx="8" fill="url(#clipr-mark)" />
+    <g fill="none" stroke="#0d0e14" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M13 9h-2.5a1.5 1.5 0 0 0-1.5 1.5v11a1.5 1.5 0 0 0 1.5 1.5H13" />
+      <path d="M19 9h2.5a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-1.5 1.5H19" />
+    </g>
+  </svg>
+)
+
 export const IconSettings = (props: { size?: number }) => (
   <Icon {...props}>
     <circle cx="12" cy="12" r="3.2" />

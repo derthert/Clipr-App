@@ -1,4 +1,4 @@
-// Reusable form primitives: segmented picker, switch, slider and timecode input.
+// Reusable form primitives: segmented picker, switch and timecode input.
 
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import { formatTimecode, parseTimecode } from '../lib/time'

@@ -85,6 +85,10 @@ matter:
 Big files and unusual codecs are also fine there, since it is the same ffmpeg you would install
 by hand.
 
+The window has no title bar of its own. The app's own top bar is the title bar, so the file name,
+the settings and the window buttons all share one strip. The window opens at a fixed size and
+does not resize, which is why everything on screen has a place that never moves.
+
 ## Running your own copy
 
 Only needed if you want to host Clipr yourself or work on it. Using the app requires none of

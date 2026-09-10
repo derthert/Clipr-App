@@ -22,6 +22,8 @@ export interface DesktopBridge {
   run: (request: DesktopRunRequest, onProgress?: (ratio: number) => void) => Promise<DesktopRunResult>
   cancel: (id: string) => Promise<boolean>
   reveal: (target: string) => Promise<void>
+  minimize: () => Promise<void>
+  close: () => Promise<void>
 }
 
 declare global {

@@ -1,6 +1,7 @@
 // Empty state: the whole surface is a drop target for the first video.
 
 import { useState } from 'react'
+import { isDesktop } from '../lib/desktop'
 import { IconAlert, IconUpload } from './icons'
 
 interface DropZoneProps {
@@ -35,16 +36,16 @@ export function DropZone({ onFile, onPick, busy, error }: DropZoneProps) {
         </div>
         <h1>Drop a video here</h1>
         <p className="dropzone__lead">
-          Pick a start and an end, export the slice. Everything runs in this tab, nothing is
-          uploaded anywhere.
+          Pick a start and an end, then export. Nothing leaves
+          {isDesktop ? ' this machine' : ' this tab'}.
         </p>
         <button type="button" className="button button--primary button--lg" onClick={onPick}>
           {busy ? 'Reading file…' : 'Choose a video'}
         </button>
         <ul className="dropzone__facts">
           <li>MP4, WebM, MOV, MKV</li>
-          <li>Lossless cut or re-encode</li>
-          <li>Queue many clips at once</li>
+          <li>Exact or lossless</li>
+          <li>Clip after clip</li>
         </ul>
         {error ? (
           <p className="dropzone__error" role="alert">

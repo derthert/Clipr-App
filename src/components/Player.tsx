@@ -59,7 +59,7 @@ export function Player({
           <button
             type="button"
             className="iconbutton"
-            title="Jump to clip start"
+            title="Go to in point"
             onClick={() => onSeek(selection.start)}
           >
             <IconSkipStart />
@@ -75,7 +75,7 @@ export function Player({
           <button
             type="button"
             className="iconbutton"
-            title="Jump to clip end"
+            title="Go to out point"
             onClick={() => onSeek(selection.end)}
           >
             <IconSkipEnd />
@@ -92,7 +92,7 @@ export function Player({
             type="button"
             className="iconbutton"
             data-active={loop}
-            title="Loop the selection (L)"
+            title="Loop selection (L)"
             onClick={onToggleLoop}
           >
             <IconLoop />

@@ -39,7 +39,7 @@ export function QueueStrip({
     <section className="queue">
       <header className="queue__head">
         <h2>Clips</h2>
-        {engine === 'loading' ? <span className="queue__note">starting the engine…</span> : null}
+        {engine === 'loading' ? <span className="queue__note">starting up…</span> : null}
         {finished ? (
           <button type="button" className="button button--ghost button--sm" onClick={onClearFinished}>
             Clear finished

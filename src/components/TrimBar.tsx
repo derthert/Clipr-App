@@ -48,7 +48,7 @@ export function TrimBar({
           <button
             type="button"
             className="iconbutton iconbutton--sm"
-            title="Set in at playhead (I)"
+            title="Set in point (I)"
             onClick={onMarkIn}
           >
             <IconMarkIn size={16} />
@@ -71,7 +71,7 @@ export function TrimBar({
           <button
             type="button"
             className="iconbutton iconbutton--sm"
-            title="Set out at playhead (O)"
+            title="Set out point (O)"
             onClick={onMarkOut}
           >
             <IconMarkOut size={16} />
@@ -83,7 +83,12 @@ export function TrimBar({
           <strong>{formatDuration(selection.end - selection.start)}</strong>
         </div>
 
-        <button type="button" className="button button--ghost" onClick={onReset} title="Select the whole video (R)">
+        <button
+          type="button"
+          className="button button--ghost"
+          onClick={onReset}
+          title="Select everything (R)"
+        >
           Whole video
         </button>
       </div>
@@ -94,7 +99,7 @@ export function TrimBar({
           className="button"
           onClick={onExportNext}
           disabled={!canExport}
-          title="Export, then jump to the next segment (Q)"
+          title="Export, then jump ahead (Q)"
         >
           <IconSkipEnd size={16} />
           Export &amp; next

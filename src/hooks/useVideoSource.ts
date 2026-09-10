@@ -13,7 +13,7 @@ function probe(url: string): Promise<{ duration: number; width: number; height: 
     video.preload = 'metadata'
     video.muted = true
 
-    const timer = window.setTimeout(() => finish(new Error('Reading this file took too long.')), METADATA_TIMEOUT)
+    const timer = window.setTimeout(() => finish(new Error('Reading this file timed out.')), METADATA_TIMEOUT)
 
     const finish = (error?: Error) => {
       window.clearTimeout(timer)
@@ -22,7 +22,7 @@ function probe(url: string): Promise<{ duration: number; width: number; height: 
       if (error) reject(error)
     }
 
-    video.addEventListener('error', () => finish(new Error('This browser cannot decode the file.')))
+    video.addEventListener('error', () => finish(new Error('This file cannot be decoded.')))
     video.addEventListener(
       'loadedmetadata',
       () => {
@@ -64,7 +64,7 @@ export function useVideoSource() {
 
   const open = useCallback(async (file: File) => {
     if (!isVideoFile(file)) {
-      setError('That file does not look like a video.')
+      setError('That is not a video file.')
       return
     }
     setBusy(true)

@@ -8,7 +8,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
     items: [
       ['Space', 'Play or pause'],
       ['← / →', 'Nudge 0.1s · Shift 1s · Alt one frame'],
-      ['Home / End', 'Jump to the in or out point'],
+      ['Home / End', 'Jump to in or out'],
       ['L', 'Loop the selection'],
       ['M', 'Mute'],
     ],
@@ -16,18 +16,18 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
   {
     title: 'Trimming',
     items: [
-      ['I', 'Set the in point at the playhead'],
-      ['O', 'Set the out point at the playhead'],
-      ['R', 'Select the whole video'],
-      ['Click the timeline', 'Move the playhead, anywhere on the bar'],
-      ['Shift + drag', 'Slide the whole selection along'],
+      ['I', 'Set the in point'],
+      ['O', 'Set the out point'],
+      ['R', 'Select everything'],
+      ['Click the timeline', 'Move the playhead'],
+      ['Shift + drag', 'Slide the selection'],
     ],
   },
   {
     title: 'Exporting',
     items: [
-      ['Ctrl / ⌘ + Enter', 'Export the current clip'],
-      ['Q', 'Export, then jump to the next segment'],
+      ['Ctrl / ⌘ + Enter', 'Export the clip'],
+      ['Q', 'Export, then jump ahead'],
       ['?', 'Open this list'],
     ],
   },

@@ -1,6 +1,6 @@
 // Desktop shell: hosts the same UI and runs the bundled ffmpeg binary for real speed.
 
-const { app, BrowserWindow, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, screen, shell } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
 const { spawn } = require('node:child_process')
@@ -8,12 +8,25 @@ const { spawn } = require('node:child_process')
 const FFMPEG = require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked')
 const running = new Map()
 
+// The window does not resize, so the layout is built for exactly one size.
+const WINDOW_SIZE = { width: 1180, height: 820 }
+
+// Packaged builds take the icon from the executable; an unpackaged run needs it pointed out.
+const ICON = path.join(__dirname, '..', 'build', 'icon.png')
+
+app.setName('Clipr')
+app.setAppUserModelId('app.clipr.desktop')
+
 function createWindow() {
+  const { workAreaSize } = screen.getPrimaryDisplay()
   const window = new BrowserWindow({
-    width: 1280,
-    height: 880,
-    minWidth: 880,
-    minHeight: 620,
+    width: Math.min(WINDOW_SIZE.width, workAreaSize.width - 40),
+    height: Math.min(WINDOW_SIZE.height, workAreaSize.height - 40),
+    icon: fs.existsSync(ICON) ? ICON : undefined,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    titleBarStyle: 'hidden',
     backgroundColor: '#0b0b11',
     autoHideMenuBar: true,
     show: false,
@@ -34,6 +47,13 @@ function createWindow() {
   if (devUrl) void window.loadURL(devUrl)
   else void window.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
 }
+
+ipcMain.handle('clipr:window', (event, action) => {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!window) return
+  if (action === 'minimize') window.minimize()
+  else if (action === 'close') window.close()
+})
 
 function writableDirectory(sourcePath) {
   const candidates = [sourcePath ? path.dirname(sourcePath) : null, app.getPath('downloads')]
