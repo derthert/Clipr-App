@@ -1,6 +1,6 @@
 {
   "name": "clipr",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Trim a slice out of any video, in the browser or as a desktop app.",
   "author": "Clipr contributors",
   "license": "MIT",
