@@ -2,6 +2,15 @@
 
 Take a video, pick a start and an end, get that piece as a file. That is the whole app.
 
+[**Open it in your browser →**](https://derthert.github.io/Clipr-App/) &nbsp;·&nbsp;
+[**Download for Windows →**](https://github.com/derthert/Clipr-App/releases/latest)
+
+[![Deploy](https://github.com/derthert/Clipr-App/actions/workflows/deploy.yml/badge.svg)](https://github.com/derthert/Clipr-App/actions/workflows/deploy.yml)
+[![Release](https://img.shields.io/github/v/release/derthert/Clipr-App?label=windows%20app)](https://github.com/derthert/Clipr-App/releases/latest)
+[![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
+
+![Clipr with a video open, a range selected on the filmstrip and one finished clip](docs/screenshot.png)
+
 There are two ways to use it, and they look and work the same:
 
 - **The web page.** Nothing to install. Open it, drop a video on it, done. No program, no
@@ -65,9 +74,12 @@ second of slack at the front is fine.
 
 ## The Windows app
 
-Grab `Clipr-Setup-x.y.z-x64.exe` from the releases page and run it, or take the `-portable.exe`
-if you would rather not install anything. Same screen, same shortcuts, two differences that
-matter:
+Grab it from the [latest release](https://github.com/derthert/Clipr-App/releases/latest):
+`Clipr-Setup-x.y.z-x64.exe` to install, or `Clipr-x.y.z-x64-portable.exe` to run a single file
+without installing. Windows will warn that the publisher is unknown, because the build is not
+code signed; choose **More info → Run anyway**, or build it yourself with `npm run desktop:pack`.
+
+Same screen, same shortcuts, two differences that matter:
 
 - **It is much faster.** The browser version runs ffmpeg compiled to WebAssembly on a single
   core. The desktop app ships the real ffmpeg and uses every core you have. Cutting ten seconds
@@ -128,8 +140,8 @@ npm run desktop:pack   # installer and portable exe in release/
 ## Contributing
 
 Issues and pull requests are welcome, including plain "this was confusing" reports. The code is
-deliberately ordinary: React, TypeScript, hand written CSS, no state library. Run
-`npm run typecheck`, `npm run lint` and `npm run build` before opening a pull request.
+deliberately ordinary: React, TypeScript, hand written CSS, no state library. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for how to run it and what the house style is.
 
 Clipr cuts video with [ffmpeg](https://ffmpeg.org/): the
 [WebAssembly build](https://ffmpegwasm.netlify.app/) in the browser, and a bundled native binary

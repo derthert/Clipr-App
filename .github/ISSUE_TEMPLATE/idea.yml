@@ -1,0 +1,24 @@
+name: An idea
+description: Something that would make trimming faster or clearer
+labels: [idea]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is slow or awkward today
+      description: Describe the moment it bites, not the feature you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would do about it
+      description: Optional. A rough sketch is fine.
+
+  - type: markdown
+    attributes:
+      value: >
+        Clipr keeps its main screen down to a video, a range and an export button, so anything
+        that adds a control has to earn it. Saying what you are trying to get done helps more
+        than proposing where a button should go.

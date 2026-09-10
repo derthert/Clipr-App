@@ -1,0 +1,42 @@
+name: Something is broken
+description: A clip came out wrong, an export failed, or the app misbehaved
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, and what you expected instead.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - The web version
+        - The Windows app
+    validations:
+      required: true
+
+  - type: input
+    id: video
+    attributes:
+      label: The video
+      description: Format, resolution and rough length. A link to a file that reproduces it helps most.
+      placeholder: MP4, 1920x1080, about 20 minutes
+
+  - type: textarea
+    id: settings
+    attributes:
+      label: Export settings
+      description: What the gear was set to. Cut, format, quality, size.
+      placeholder: Exact · MP4 · Balanced · Original
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Error text
+      description: Anything red in the clips list, or in the browser console.
+      render: text
