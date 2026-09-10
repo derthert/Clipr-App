@@ -10,6 +10,7 @@ import {
 import type { Selection } from '../types'
 import { clamp, formatTimecode } from '../lib/time'
 import { MIN_CLIP_DURATION } from '../lib/settings'
+import { Waveform } from './Waveform'
 
 type DragMode = 'in' | 'out' | 'move' | 'scrub'
 
@@ -20,11 +21,20 @@ interface TimelineProps {
   selection: Selection
   time: number
   frames: (string | undefined)[]
+  peaks: Float32Array | null
   onChange: (selection: Selection) => void
   onSeek: (time: number) => void
 }
 
-export function Timeline({ duration, selection, time, frames, onChange, onSeek }: TimelineProps) {
+export function Timeline({
+  duration,
+  selection,
+  time,
+  frames,
+  peaks,
+  onChange,
+  onSeek,
+}: TimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ mode: DragMode; grabbedAt: number } | null>(null)
   const [hover, setHover] = useState<number | null>(null)
@@ -132,6 +142,10 @@ export function Timeline({ duration, selection, time, frames, onChange, onSeek }
               style={frame ? { backgroundImage: `url(${frame})` } : undefined}
             />
           ))}
+        </div>
+
+        <div className="timeline__audio">
+          <Waveform peaks={peaks} />
         </div>
 
         <div className="timeline__shade" style={{ left: 0, width: percent(selection.start) }} />

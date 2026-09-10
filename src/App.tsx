@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { ExportSettings, Preferences, Selection } from './types'
-import { FILMSTRIP_FRAMES, REPO_URL } from './config'
+import { APP_NAME, FILMSTRIP_FRAMES, REPO_URL, WAVEFORM_BUCKETS } from './config'
 import { DropZone } from './components/DropZone'
 import { Header } from './components/Header'
 import { Player } from './components/Player'
@@ -21,6 +21,7 @@ import { isDesktop } from './lib/desktop'
 import { ensureEngine, previewCommand } from './lib/ffmpeg'
 import { VIDEO_ACCEPT } from './lib/file'
 import { captureFilmstrip } from './lib/filmstrip'
+import { extractPeaks } from './lib/waveform'
 import {
   DEFAULT_PREFERENCES,
   DEFAULT_SETTINGS,
@@ -39,6 +40,7 @@ export default function App() {
 
   const [selection, setSelection] = useState<Selection>({ start: 0, end: 0 })
   const [frames, setFrames] = useState<(string | undefined)[]>([])
+  const [peaks, setPeaks] = useState<Float32Array | null>(null)
   const [dialog, setDialog] = useState<'none' | 'shortcuts' | 'settings'>('none')
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -54,11 +56,21 @@ export default function App() {
   }, [preferences.value.theme])
 
   useEffect(() => {
+    document.title = source ? `${source.file.name} · ${APP_NAME}` : APP_NAME
+  }, [source])
+
+  useEffect(() => {
     if (!source) return
     setSelection({ start: 0, end: source.duration })
     setFrames(new Array(FILMSTRIP_FRAMES).fill(undefined))
+    setPeaks(null)
 
     const controller = new AbortController()
+    void extractPeaks({ file: source.file, buckets: WAVEFORM_BUCKETS, signal: controller.signal })
+      .then((result) => {
+        if (!controller.signal.aborted) setPeaks(result)
+      })
+      .catch(() => undefined)
     void captureFilmstrip({
       url: source.url,
       duration: source.duration,
@@ -213,6 +225,7 @@ export default function App() {
             selection={selection}
             time={playback.time}
             frames={frames}
+            peaks={peaks}
             onChange={setSelection}
             onSeek={playback.seek}
           />
