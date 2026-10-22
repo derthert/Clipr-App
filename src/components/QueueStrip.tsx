@@ -11,7 +11,7 @@ const STATUS_LABEL: Record<ExportJob['status'], string> = {
   queued: 'Waiting',
   running: 'Rendering',
   done: 'Ready',
-  error: 'Failed',
+  error: 'Dışa Aktarma Başarısız',
   canceled: 'Canceled',
 }
 
@@ -34,12 +34,15 @@ export function QueueStrip({
 }: QueueStripProps) {
   if (!jobs.length) return null
   const finished = jobs.filter((job) => job.status !== 'queued' && job.status !== 'running').length
+  const hasActiveJob = jobs.some((job) => job.status === 'queued' || job.status === 'running')
 
   return (
     <section className="queue">
       <header className="queue__head">
         <h2>Clips</h2>
-        {engine === 'loading' ? <span className="queue__note">starting up…</span> : null}
+        {engine === 'loading' && hasActiveJob ? (
+          <span className="queue__note">starting up…</span>
+        ) : null}
         {finished ? (
           <button type="button" className="button button--ghost button--sm" onClick={onClearFinished}>
             Clear finished

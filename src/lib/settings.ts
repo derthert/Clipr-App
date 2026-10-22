@@ -6,13 +6,19 @@ import { sanitizeFileName } from './file'
 
 export const MIN_CLIP_DURATION = 0.05
 export const FILE_NAME_TEMPLATE = '{name}_{start}-{end}'
-export const AUDIO_BITRATE = '160k'
+export const AUDIO_BITRATE = '128k'
+export const DEFAULT_FPS = '30'
+export const THREAD_COUNT = String(
+  typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+    ? Math.min(8, Math.max(4, navigator.hardwareConcurrency))
+    : 4,
+)
 
 export const DEFAULT_SETTINGS: ExportSettings = {
   mode: 'precise',
   format: 'mp4',
   quality: 'balanced',
-  scale: 'source',
+  scale: '720',
   muteAudio: false,
 }
 
@@ -21,10 +27,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   loopSelection: true,
 }
 
-const QUALITY: Record<QualityPreset, { crf: string; preset: string }> = {
-  high: { crf: '19', preset: 'veryfast' },
-  balanced: { crf: '24', preset: 'veryfast' },
-  small: { crf: '30', preset: 'veryfast' },
+const QUALITY_CRF: Record<QualityPreset, string> = {
+  high: '24',
+  balanced: '28',
+  small: '30',
 }
 
 const SCALE_HEIGHTS: Record<Exclude<ScalePreset, 'source'>, number> = {
@@ -33,12 +39,33 @@ const SCALE_HEIGHTS: Record<Exclude<ScalePreset, 'source'>, number> = {
   '480': 480,
 }
 
-const COPY_SAFE_CONTAINERS = new Set(['mp4', 'mkv', 'webm', 'mov', 'm4v', 'ts', 'avi', 'flv'])
+/** Reference preview height so text fontSize scales identically between preview and export. */
+export const PREVIEW_REF_HEIGHT = 360
 
-export function outputExtension(settings: ExportSettings, sourceExtension: string): string {
-  if (settings.mode === 'copy') {
-    return COPY_SAFE_CONTAINERS.has(sourceExtension) ? sourceExtension : 'mp4'
-  }
+/** Output height cap for a scale preset: 'source' is capped at 1080p. */
+export function maxOutputHeight(scale: ScalePreset): number {
+  return scale === 'source' ? 1080 : SCALE_HEIGHTS[scale]
+}
+
+/**
+ * H.264 encoder arguments shared by every video export path. CRF drives the rate
+ * control; maxrate/bufsize only cap peaks (libx264 ignores -b:v once -crf is set).
+ */
+export function x264Args(quality: QualityPreset): string[] {
+  return [
+    '-r', DEFAULT_FPS,
+    '-threads', THREAD_COUNT,
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-tune', 'zerolatency',
+    '-crf', QUALITY_CRF[quality],
+    '-maxrate', '2.5M',
+    '-bufsize', '4M',
+    '-pix_fmt', 'yuv420p',
+  ]
+}
+
+export function outputExtension(settings: ExportSettings): string {
   return settings.format
 }
 
@@ -65,11 +92,11 @@ export function mimeForExtension(extension: string): string {
 function videoFilters(settings: ExportSettings, sourceHeight?: number): string[] {
   const filters: string[] = []
   if (settings.format === 'gif') filters.push('fps=12')
-  if (settings.scale !== 'source') {
-    const target = SCALE_HEIGHTS[settings.scale]
-    const height = sourceHeight ? Math.min(sourceHeight, target) : target
-    filters.push(`scale=-2:${Math.round(height / 2) * 2}:flags=lanczos`)
-  }
+  // Cap output resolution to max 1080p (or the selected 720p/480p preset)
+  const maxTarget = maxOutputHeight(settings.scale)
+  const height = sourceHeight ? Math.min(sourceHeight, maxTarget) : maxTarget
+  const evenHeight = Math.max(2, Math.round(height / 2) * 2)
+  filters.push(`scale=-2:${evenHeight}:flags=fast_bilinear`)
   return filters
 }
 
@@ -91,16 +118,17 @@ export function buildFfmpegArgs({
   sourceHeight,
 }: CommandInput): string[] {
   const duration = Math.max(MIN_CLIP_DURATION, end - start)
-  const args = ['-hide_banner', '-ss', start.toFixed(3), '-i', input, '-t', duration.toFixed(3)]
+  const args = [
+    '-hide_banner',
+    '-ss',
+    start.toFixed(3),
+    '-i',
+    input,
+    '-t',
+    duration.toFixed(3),
+  ]
   const wantsAudio = !settings.muteAudio && settings.format !== 'gif'
   const filters = videoFilters(settings, sourceHeight)
-
-  if (settings.mode === 'copy') {
-    args.push('-map', '0:v:0?')
-    if (wantsAudio) args.push('-map', '0:a:0?')
-    args.push('-c', 'copy', output)
-    return args
-  }
 
   if (settings.format === 'mp3') {
     args.push('-vn', '-c:a', 'libmp3lame', '-b:a', AUDIO_BITRATE, output)
@@ -121,18 +149,7 @@ export function buildFfmpegArgs({
   args.push('-map', '0:v:0?')
   if (wantsAudio) args.push('-map', '0:a:0?')
   if (filters.length) args.push('-vf', filters.join(','))
-  args.push(
-    '-c:v',
-    'libx264',
-    '-preset',
-    QUALITY[settings.quality].preset,
-    '-crf',
-    QUALITY[settings.quality].crf,
-    '-pix_fmt',
-    'yuv420p',
-    '-movflags',
-    '+faststart',
-  )
+  args.push(...x264Args(settings.quality), '-movflags', '+faststart')
   args.push(...(wantsAudio ? ['-c:a', 'aac', '-b:a', AUDIO_BITRATE] : ['-an']))
   args.push(output)
   return args
