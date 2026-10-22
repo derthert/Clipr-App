@@ -1,3 +1,17 @@
+## What's new in 0.3.0
+
+- **Timeline editor**: put several videos on one timeline, trim, split, move, cut, copy
+  and paste clips, leave gaps, and export everything as one video. By @yerkam (#15).
+- **Text layer**: add captions, drag them on the video and set font, size and color.
+  By @yerkam (#15).
+- **Much faster exports**: the desktop app now renders every export with its bundled
+  ffmpeg, and the web version uses several CPU cores. On a 16-core PC a 30 second 1080p
+  clip now exports in about 3 seconds on desktop and 7 seconds in the browser, down from 38.
+- **Smaller, better looking files** on desktop, no bitrate cap, and "Original" now keeps
+  the full resolution.
+- **Simple and Full editor profiles**: Simple keeps it to split, trim and export.
+- **Shift + click** moves the playhead anywhere, even over a clip.
+
 Windows build of Clipr. Pick one:
 
 | File | What it is |
