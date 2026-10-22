@@ -2,14 +2,16 @@
 
 import { FFmpeg, FFFSType } from '@ffmpeg/ffmpeg'
 import { fetchFile, toBlobURL } from '@ffmpeg/util'
-import type { CompositionPiece, ExportSettings, QualityPreset, ScalePreset, TextSegment } from '../types'
+import type { CompositionPiece, ExportSettings, TextSegment } from '../types'
 import {
   AUDIO_BITRATE,
   DEFAULT_FPS,
+  PREVIEW_REF_HEIGHT,
   THREAD_COUNT,
-  VIDEO_BITRATE,
   buildFfmpegArgs,
+  maxOutputHeight,
   mimeForExtension,
+  x264Args,
 } from './settings'
 import { clamp } from './time'
 import { extensionOf } from './file'
@@ -19,18 +21,6 @@ export type EngineStatus = 'idle' | 'loading' | 'ready' | 'error'
 const MOUNT_DIR = '/clipr'
 const CDN_CORE_BASE = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm'
 const listeners = new Set<(status: EngineStatus) => void>()
-
-const QUALITY_CRF: Record<QualityPreset, string> = {
-  high: '24',
-  balanced: '28',
-  small: '30',
-}
-
-const SCALE_HEIGHTS: Record<Exclude<ScalePreset, 'source'>, number> = {
-  '1080': 1080,
-  '720': 720,
-  '480': 480,
-}
 
 let engine: FFmpeg | null = null
 let loading: Promise<FFmpeg> | null = null
@@ -370,6 +360,9 @@ async function mountInput(instance: FFmpeg, file: File) {
   }
 }
 
+/** ffmpeg ran to completion but failed; the wasm engine itself is still healthy. */
+class ExitError extends Error {}
+
 function describeFailure(logs: string[]): string {
   const meaningful = logs
     .filter((line) => /error|invalid|unable|failed|not found|no such|cannot/i.test(line))
@@ -411,7 +404,7 @@ function computeTargetDimensions(
   }
 
   // Always cap output resolution to max 1080p (or 720p/480p preset)
-  const maxHeight = settings.scale === 'source' ? 1080 : SCALE_HEIGHTS[settings.scale]
+  const maxHeight = maxOutputHeight(settings.scale)
   if (baseH > maxHeight) {
     const ratio = maxHeight / baseH
     baseW = Math.round(baseW * ratio)
@@ -440,8 +433,6 @@ export interface RenderRequest {
   sourceHeight?: number
   onProgress?: (ratio: number) => void
 }
-
-const PREVIEW_REF_HEIGHT = 360
 
 interface PreparedOverlay {
   fileName: string
@@ -618,7 +609,6 @@ async function executeSingle(request: RenderRequest): Promise<Blob> {
 
     if (overlays.length > 0) {
       const wantsAudio = !request.settings.muteAudio && request.settings.format !== 'gif'
-      const crf = QUALITY_CRF[request.settings.quality]
       const baseVf = `scale=-2:${targetH}:flags=fast_bilinear,format=yuv420p`
       const { filterComplex, outLabel } = buildOverlayFilterComplex(baseVf, overlays, 1)
       const overlayInputs = overlays.flatMap((ov) => ['-i', ov.fileName])
@@ -653,16 +643,7 @@ async function executeSingle(request: RenderRequest): Promise<Blob> {
           '-filter_complex', filterComplex,
           '-map', outLabel,
           ...(wantsAudio ? ['-map', '0:a:0?'] : ['-an']),
-          '-r', DEFAULT_FPS,
-          '-threads', THREAD_COUNT,
-          '-c:v', 'libx264',
-          '-preset', 'ultrafast',
-          '-tune', 'zerolatency',
-          '-crf', crf,
-          '-b:v', VIDEO_BITRATE,
-          '-maxrate', '2.5M',
-          '-bufsize', '4M',
-          '-pix_fmt', 'yuv420p',
+          ...x264Args(request.settings.quality),
           '-movflags', '+faststart',
           ...(wantsAudio ? ['-c:a', 'aac', '-b:a', AUDIO_BITRATE] : []),
           output,
@@ -681,14 +662,15 @@ async function executeSingle(request: RenderRequest): Promise<Blob> {
       )
     }
 
-    if (code !== 0) throw new Error(describeFailure(logs))
+    if (code !== 0) throw new ExitError(describeFailure(logs))
     const data = await instance.readFile(output)
     const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data
-    if (!bytes.length) throw new Error('ffmpeg produced an empty file')
+    if (!bytes.length) throw new ExitError('ffmpeg produced an empty file')
     return new Blob([bytes as unknown as BlobPart], { type: mimeForExtension(request.extension) })
   } catch (error) {
     console.error('[FFmpeg executeSingle Export Hatası]', error, { logs })
-    cancelRender()
+    // A non-zero exit leaves the engine usable; only reset it after crashes or aborts.
+    if (!(error instanceof ExitError)) cancelRender()
     throw formatExportError(error, logs)
   } finally {
     instance.off('log', onLog)
@@ -749,7 +731,6 @@ async function executeComposition(
   )
   const isAudioOnly = request.settings.format === 'mp3'
   const wantsAudio = !request.settings.muteAudio && request.settings.format !== 'gif'
-  const crf = QUALITY_CRF[request.settings.quality]
 
   try {
     for (let i = 0; i < pieces.length; i++) {
@@ -770,7 +751,7 @@ async function executeComposition(
             '-b:a', AUDIO_BITRATE,
             partName,
           ])
-          if (code !== 0) throw new Error(describeFailure(logs))
+          if (code !== 0) throw new ExitError(describeFailure(logs))
         } else {
           const mounted = await mountInput(instance, piece.file)
           try {
@@ -798,7 +779,7 @@ async function executeComposition(
                 partName,
               ])
             }
-            if (code !== 0) throw new Error(describeFailure(logs))
+            if (code !== 0) throw new ExitError(describeFailure(logs))
           } finally {
             await withTimeout(mounted.release(), 1500, 'release').catch(() => undefined)
           }
@@ -847,16 +828,7 @@ async function executeComposition(
             : []),
           ...overlayInputs,
           ...filterArgs,
-          '-r', DEFAULT_FPS,
-          '-threads', THREAD_COUNT,
-          '-c:v', 'libx264',
-          '-preset', 'ultrafast',
-          '-tune', 'zerolatency',
-          '-crf', crf,
-          '-b:v', VIDEO_BITRATE,
-          '-maxrate', '2.5M',
-          '-bufsize', '4M',
-          '-pix_fmt', 'yuv420p',
+          ...x264Args(request.settings.quality),
           ...(wantsAudio
             ? ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', AUDIO_BITRATE, '-shortest']
             : ['-an']),
@@ -864,7 +836,7 @@ async function executeComposition(
           partName,
         ]
         const code = await instance.exec(gapArgs)
-        if (code !== 0) throw new Error(describeFailure(logs))
+        if (code !== 0) throw new ExitError(describeFailure(logs))
       } else {
         const mounted = await mountInput(instance, piece.file)
         const pieceOverlays = await prepareWindowOverlays(
@@ -910,16 +882,7 @@ async function executeComposition(
               ...overlayInputs,
               ...videoMapAndFilter,
               '-af', 'aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo',
-              '-r', DEFAULT_FPS,
-              '-threads', THREAD_COUNT,
-              '-c:v', 'libx264',
-              '-preset', 'ultrafast',
-              '-tune', 'zerolatency',
-              '-crf', crf,
-              '-b:v', VIDEO_BITRATE,
-              '-maxrate', '2.5M',
-              '-bufsize', '4M',
-              '-pix_fmt', 'yuv420p',
+              ...x264Args(request.settings.quality),
               '-c:a', 'aac',
               '-ar', '44100',
               '-ac', '2',
@@ -961,16 +924,7 @@ async function executeComposition(
                 : []),
               ...overlayInputs,
               ...videoMapAndFilter,
-              '-r', DEFAULT_FPS,
-              '-threads', THREAD_COUNT,
-              '-c:v', 'libx264',
-              '-preset', 'ultrafast',
-              '-tune', 'zerolatency',
-              '-crf', crf,
-              '-b:v', VIDEO_BITRATE,
-              '-maxrate', '2.5M',
-              '-bufsize', '4M',
-              '-pix_fmt', 'yuv420p',
+              ...x264Args(request.settings.quality),
               ...(wantsAudio
                 ? ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', AUDIO_BITRATE, '-shortest']
                 : ['-an']),
@@ -980,7 +934,7 @@ async function executeComposition(
             code = await instance.exec(fallbackArgs)
           }
 
-          if (code !== 0) throw new Error(describeFailure(logs))
+          if (code !== 0) throw new ExitError(describeFailure(logs))
         } finally {
           await withTimeout(mounted.release(), 1500, 'release').catch(() => undefined)
         }
@@ -1031,16 +985,17 @@ async function executeComposition(
     }
 
     const concatCode = await instance.exec(concatArgs)
-    if (concatCode !== 0) throw new Error(describeFailure(logs))
+    if (concatCode !== 0) throw new ExitError(describeFailure(logs))
 
     request.onProgress?.(1)
     const data = await instance.readFile(output)
     const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data
-    if (!bytes.length) throw new Error('ffmpeg produced an empty file')
+    if (!bytes.length) throw new ExitError('ffmpeg produced an empty file')
     return new Blob([bytes as unknown as BlobPart], { type: mimeForExtension(request.extension) })
   } catch (error) {
     console.error('[FFmpeg executeComposition Export Hatası]', error, { logs })
-    cancelRender()
+    // A non-zero exit leaves the engine usable; only reset it after crashes or aborts.
+    if (!(error instanceof ExitError)) cancelRender()
     throw formatExportError(error, logs)
   } finally {
     instance.off('log', onLog)

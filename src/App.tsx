@@ -3,7 +3,7 @@
 // cut/copy/paste segments, and export everything concatenated.
 
 import { useEffect, useRef, useState } from 'react'
-import type { CompositionPiece, ExportSettings, Preferences, Selection } from './types'
+import type { CompositionPiece, ExportSettings, Preferences, Selection, VideoSource } from './types'
 import { APP_NAME, REPO_URL } from './config'
 import { CompositeTimeline } from './components/CompositeTimeline'
 import { DropZone } from './components/DropZone'
@@ -125,7 +125,9 @@ export default function App() {
     const sortedViews = [...tl.views].sort((a, b) => a.timelineStart - b.timelineStart)
     const pieces: CompositionPiece[] = []
     let cursor = 0
-    let primarySource = firstSource
+    // The first clip's source, not the first imported file: a single-clip export renders
+    // `file`/`start`/`end` directly, so they must all describe the same video.
+    let primarySource: VideoSource | undefined
 
     for (const view of sortedViews) {
       const src = tl.sources.get(view.sourceId)
@@ -162,7 +164,7 @@ export default function App() {
     )
     const isMultiOrGap = pieces.length > 1 || hasGaps
     const effectiveSettings: ExportSettings = { ...settings.value, mode: 'precise' }
-    const ext = outputExtension(effectiveSettings, primarySource.extension)
+    const ext = outputExtension(effectiveSettings)
     const singleClip = pieces.length === 1 && pieces[0].kind === 'clip' ? pieces[0] : null
 
     queue.enqueue({
@@ -400,7 +402,7 @@ export default function App() {
             start: selection?.start ?? 0,
             end: selection?.end ?? playback.totalDuration,
             settings: settings.value,
-            extension: outputExtension(settings.value, firstSource?.extension ?? ''),
+            extension: outputExtension(settings.value),
             sourceHeight: firstSource?.height,
           })}
         />

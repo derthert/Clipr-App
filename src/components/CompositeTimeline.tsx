@@ -39,6 +39,7 @@ type DragState =
       initView: SegmentView
       maxDur: number
       grabTime: number
+      historySaved: boolean
     }
   | {
       kind: 'move'
@@ -47,6 +48,7 @@ type DragState =
       grabOffset: number
       initClientX: number
       moved: boolean
+      historySaved: boolean
     }
   | {
       kind: 'trim-text'
@@ -243,7 +245,6 @@ export function CompositeTimeline({
       onSelectText(null)
       onSelectionChange(null)
       if (v && src) {
-        onSaveHistory?.()
         dragRef.current = {
           kind: 'trim',
           segId,
@@ -251,6 +252,7 @@ export function CompositeTimeline({
           initView: v,
           maxDur: src.duration,
           grabTime: t,
+          historySaved: false,
         }
         setActiveDragKind('trim')
       }
@@ -261,7 +263,6 @@ export function CompositeTimeline({
       onSelectText(null)
       onSelectionChange(null)
       if (v && src) {
-        onSaveHistory?.()
         dragRef.current = {
           kind: 'trim',
           segId,
@@ -269,6 +270,7 @@ export function CompositeTimeline({
           initView: v,
           maxDur: src.duration,
           grabTime: t,
+          historySaved: false,
         }
         setActiveDragKind('trim')
       }
@@ -278,7 +280,6 @@ export function CompositeTimeline({
       onSelectText(null)
       onSelectionChange(null)
       if (view) {
-        onSaveHistory?.()
         dragRef.current = {
           kind: 'move',
           segId,
@@ -286,6 +287,7 @@ export function CompositeTimeline({
           grabOffset: t - view.timelineStart,
           initClientX: e.clientX,
           moved: false,
+          historySaved: false,
         }
         setActiveDragKind('move')
       }
@@ -375,6 +377,11 @@ export function CompositeTimeline({
         onUpdateText(drag.textId, { timelineStart: nextStart })
       }
     } else if (drag.kind === 'trim') {
+      // Record undo history on the first actual change, not on a plain click.
+      if (!drag.historySaved) {
+        onSaveHistory?.()
+        drag.historySaved = true
+      }
       const { segId, edge, initView, maxDur, grabTime } = drag
       const delta = t - grabTime
       const others = views
@@ -455,6 +462,10 @@ export function CompositeTimeline({
         drag.moved = true
       }
       if (drag.moved) {
+        if (!drag.historySaved) {
+          onSaveHistory?.()
+          drag.historySaved = true
+        }
         const dur = drag.initView.timelineDuration
         const maxTrackStart = Math.max(0, displaySpan - dur)
         const rawStart = clamp(t - drag.grabOffset, 0, maxTrackStart)

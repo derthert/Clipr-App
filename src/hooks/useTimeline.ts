@@ -1,6 +1,6 @@
 // Manages a unified timeline of source videos and segments.
 // Sources: Map<id, VideoSource>
-// Segments: ordered array — timeline position is computed (no gaps).
+// Segments: array of clips, each placed at an explicit timelineOffset (gaps allowed).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Segment, SegmentView, TextSegment, VideoSource } from '../types'
@@ -82,7 +82,9 @@ export function computeViews(segments: Segment[]): SegmentView[] {
 
 /**
  * Slice a segment list by a [rangeStart, rangeEnd] window on the unified timeline.
- * Returns three groups: before, inside, after — all gap-free.
+ * `before` keeps its timeline positions, `after` is shifted left by the range length
+ * (ripple), and `inside` holds the removed pieces. Every piece carries an explicit
+ * `timelineOffset`, so nothing falls back to the "right after the previous segment" layout.
  */
 function sliceByRange(
   views: SegmentView[],
@@ -92,42 +94,54 @@ function sliceByRange(
   const before: Segment[] = []
   const inside: Segment[] = []
   const after: Segment[] = []
+  const shift = rangeEnd - rangeStart
 
   for (const v of views) {
     const segEnd = v.timelineStart + v.timelineDuration
     if (segEnd <= rangeStart) { before.push(bare(v)); continue }
-    if (v.timelineStart >= rangeEnd) { after.push(bare(v)); continue }
+    if (v.timelineStart >= rangeEnd) {
+      after.push(piece(v, v.sourceStart, v.sourceEnd, v.timelineStart - shift, v.id))
+      continue
+    }
 
-    // Overlapping segment — split into up to 3 pieces
+    // Overlapping segment: split into up to 3 pieces
     if (v.timelineStart < rangeStart) {
       const end = v.sourceStart + (rangeStart - v.timelineStart)
-      if (end - v.sourceStart >= MIN_SEG)
-        before.push({ id: createId(), sourceId: v.sourceId, sourceStart: v.sourceStart, sourceEnd: end })
+      if (end - v.sourceStart >= MIN_SEG) before.push(piece(v, v.sourceStart, end, v.timelineStart))
     }
     const inStart = v.sourceStart + Math.max(0, rangeStart - v.timelineStart)
     const inEnd = v.sourceStart + Math.min(v.timelineDuration, rangeEnd - v.timelineStart)
     if (inEnd - inStart >= MIN_SEG)
-      inside.push({ id: createId(), sourceId: v.sourceId, sourceStart: inStart, sourceEnd: inEnd })
+      inside.push(piece(v, inStart, inEnd, Math.max(v.timelineStart, rangeStart)))
     if (segEnd > rangeEnd) {
       const start = v.sourceStart + (rangeEnd - v.timelineStart)
-      if (v.sourceEnd - start >= MIN_SEG)
-        after.push({ id: createId(), sourceId: v.sourceId, sourceStart: start, sourceEnd: v.sourceEnd })
+      if (v.sourceEnd - start >= MIN_SEG) after.push(piece(v, start, v.sourceEnd, rangeStart))
     }
   }
 
   return { before, inside, after }
 }
 
-function bare(v: SegmentView): Segment {
+function piece(
+  v: SegmentView,
+  sourceStart: number,
+  sourceEnd: number,
+  timelineOffset: number,
+  id = createId(),
+): Segment {
   return {
-    id: v.id,
+    id,
     sourceId: v.sourceId,
-    sourceStart: v.sourceStart,
-    sourceEnd: v.sourceEnd,
-    trimStart: v.sourceStart,
-    trimEnd: v.sourceEnd,
-    timelineOffset: v.timelineStart,
+    sourceStart,
+    sourceEnd,
+    trimStart: sourceStart,
+    trimEnd: sourceEnd,
+    timelineOffset: Math.max(0, timelineOffset),
   }
+}
+
+function bare(v: SegmentView): Segment {
+  return piece(v, v.sourceStart, v.sourceEnd, v.timelineStart, v.id)
 }
 
 // ─────────────────────────────────────────────
@@ -136,7 +150,10 @@ const HISTORY_LIMIT = 100
 
 export function useTimeline() {
   const [sources, setSources] = useState<Map<string, VideoSource>>(new Map())
-  const [segments, setSegments] = useState<Segment[]>([])
+  const [segments, setSegmentsState] = useState<Segment[]>([])
+  // Latest segments, readable synchronously. Edits and history are computed from this ref
+  // instead of inside React state updaters, which StrictMode runs twice.
+  const segmentsRef = useRef<Segment[]>([])
   const [textSegments, setTextSegments] = useState<TextSegment[]>([])
   const [hasTextTrack, setHasTextTrack] = useState(false)
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
@@ -160,40 +177,44 @@ export function useTimeline() {
     redoStack.current = []
   }, [])
 
+  const commitSegments = useCallback((next: Segment[]) => {
+    segmentsRef.current = next
+    setSegmentsState(next)
+  }, [])
+
+  const setSegments = useCallback(
+    (updater: (prev: Segment[]) => Segment[]) => commitSegments(updater(segmentsRef.current)),
+    [commitSegments],
+  )
+
   const saveHistory = useCallback(() => {
-    setSegments((prev) => {
-      pushHistory(prev)
-      return prev
-    })
+    pushHistory(segmentsRef.current)
   }, [pushHistory])
 
   const setSegmentsWithHistory = useCallback(
     (updater: (prev: Segment[]) => Segment[]) => {
-      setSegments((prev) => {
-        pushHistory(prev)
-        return updater(prev)
-      })
+      const prev = segmentsRef.current
+      const next = updater(prev)
+      if (next === prev) return
+      pushHistory(prev)
+      commitSegments(next)
     },
-    [pushHistory],
+    [pushHistory, commitSegments],
   )
 
   const undo = useCallback(() => {
-    setSegments((prev) => {
-      const snapshot = undoStack.current.pop()
-      if (!snapshot) return prev
-      redoStack.current.push(prev)
-      return snapshot
-    })
-  }, [])
+    const snapshot = undoStack.current.pop()
+    if (!snapshot) return
+    redoStack.current.push(segmentsRef.current)
+    commitSegments(snapshot)
+  }, [commitSegments])
 
   const redo = useCallback(() => {
-    setSegments((prev) => {
-      const snapshot = redoStack.current.pop()
-      if (!snapshot) return prev
-      undoStack.current.push(prev)
-      return snapshot
-    })
-  }, [])
+    const snapshot = redoStack.current.pop()
+    if (!snapshot) return
+    undoStack.current.push(segmentsRef.current)
+    commitSegments(snapshot)
+  }, [commitSegments])
 
   useEffect(
     () => () => {
@@ -279,7 +300,7 @@ export function useTimeline() {
     }
 
     setBusy(false)
-  }, [])
+  }, [setSegments])
 
   // ── Edit operations ─────────────────────────────────────────────────────────
 
@@ -337,7 +358,7 @@ export function useTimeline() {
       }
       return prev
     })
-  }, [])
+  }, [setSegments])
 
   /** Cut a single selected clip (copy into `copiedClip` + remove from timeline). */
   const cutClip = useCallback((segId: string) => {
@@ -380,7 +401,7 @@ export function useTimeline() {
       if (inside.length > 0) setCopiedClip(inside[0])
       return prev // copy doesn't mutate segments, no history push needed
     })
-  }, [])
+  }, [setSegments])
 
   /** Cut a range (copy + ripple-delete). */
   const cutRange = useCallback((start: number, end: number) => {
@@ -519,7 +540,7 @@ export function useTimeline() {
         }),
       )
     },
-    [],
+    [setSegments],
   )
 
   /** Remove a single segment from the timeline. */
@@ -544,7 +565,7 @@ export function useTimeline() {
         segment.id === segId ? { ...segment, timelineOffset: Math.max(0, timelineOffset) } : segment,
       ),
     )
-  }, [])
+  }, [setSegments])
 
   // ── Independent Text Track operations ───────────────────────────────────────
 

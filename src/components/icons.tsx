@@ -211,30 +211,3 @@ export const IconMute = (props: { size?: number }) => (
     <path d="M16 10l4 4M20 10l-4 4" />
   </Icon>
 )
-
-export const IconFilm = (props: { size?: number }) => (
-  <Icon {...props}>
-    <rect x="2" y="4" width="20" height="16" rx="2" />
-    <path d="M7 4v16M17 4v16M2 9h5M17 9h5M2 15h5M17 15h5" />
-  </Icon>
-)
-
-export const IconMerge = (props: { size?: number }) => (
-  <Icon {...props}>
-    <path d="M3 6h4l2 4-2 4H3" />
-    <path d="M21 6h-4l-2 4 2 4h4" />
-    <path d="M9 10h6" />
-    <circle cx="12" cy="10" r="1.5" fill="currentColor" stroke="none" />
-  </Icon>
-)
-
-export const IconGripVertical = (props: { size?: number }) => (
-  <Icon {...props}>
-    <circle cx="9" cy="6" r="1" fill="currentColor" stroke="none" />
-    <circle cx="9" cy="12" r="1" fill="currentColor" stroke="none" />
-    <circle cx="9" cy="18" r="1" fill="currentColor" stroke="none" />
-    <circle cx="15" cy="6" r="1" fill="currentColor" stroke="none" />
-    <circle cx="15" cy="12" r="1" fill="currentColor" stroke="none" />
-    <circle cx="15" cy="18" r="1" fill="currentColor" stroke="none" />
-  </Icon>
-)

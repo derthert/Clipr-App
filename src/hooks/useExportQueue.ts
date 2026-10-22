@@ -77,10 +77,7 @@ export function useExportQueue() {
         if (result.url) downloadBlobUrl(result.url, next.fileName)
       } catch (error: unknown) {
         const canceled = canceledRef.current.delete(next.id) || error instanceof CanceledError
-        if (!canceled) {
-          console.error('Dışa Aktarma Başarısız (Export Queue):', error)
-          cancelRender(next.id)
-        }
+        if (!canceled) console.error('Dışa Aktarma Başarısız (Export Queue):', error)
         update(next.id, {
           status: canceled ? 'canceled' : 'error',
           error: canceled ? undefined : messageOf(error),

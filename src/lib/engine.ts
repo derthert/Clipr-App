@@ -35,6 +35,10 @@ export class CanceledError extends Error {
   }
 }
 
+// Jobs currently handled by the desktop ffmpeg binary. Canceling one of them must not
+// terminate the shared ffmpeg.wasm engine, which timeline and text exports still rely on.
+const desktopJobs = new Set<string>()
+
 export async function renderClip(request: ClipRequest): Promise<ClipResult> {
   const isMultiPiece =
     Boolean(request.pieces) &&
@@ -44,6 +48,7 @@ export async function renderClip(request: ClipRequest): Promise<ClipResult> {
 
   try {
     if (desktop && request.sourcePath && !isMultiPiece && !hasTexts) {
+      desktopJobs.add(request.id)
       const result = await desktop.run(
         {
           id: request.id,
@@ -60,7 +65,7 @@ export async function renderClip(request: ClipRequest): Promise<ClipResult> {
           duration: request.end - request.start,
         },
         request.onProgress,
-      )
+      ).finally(() => desktopJobs.delete(request.id))
       if (result.canceled) throw new CanceledError()
       if (!result.ok) {
         throw new Error(result.error ?? 'FFmpeg işlemi başarısız oldu')
@@ -84,7 +89,6 @@ export async function renderClip(request: ClipRequest): Promise<ClipResult> {
   } catch (error) {
     if (error instanceof CanceledError) throw error
     console.error('[Export Engine Hatası]', error)
-    cancelRender(request.id)
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(
       detail.startsWith('Dışa Aktarma Başarısız')
@@ -95,6 +99,6 @@ export async function renderClip(request: ClipRequest): Promise<ClipResult> {
 }
 
 export function cancelRender(id: string): void {
-  if (desktop) void desktop.cancel(id)
-  cancelWasm()
+  if (desktop && desktopJobs.has(id)) void desktop.cancel(id)
+  else cancelWasm()
 }

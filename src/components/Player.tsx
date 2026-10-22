@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { Selection, TextSegment } from '../types'
 import { clamp, formatTimecode } from '../lib/time'
+import { PREVIEW_REF_HEIGHT } from '../lib/settings'
 import {
   IconLoop,
   IconMute,
@@ -14,9 +15,6 @@ import {
 } from './icons'
 
 const RATES = [0.25, 0.5, 1, 1.5, 2]
-/** Reference preview height used so fontSize scales identically between preview and export. */
-export const PREVIEW_REF_HEIGHT = 360
-
 interface PlayerProps {
   url?: string
   videoRef: RefObject<HTMLVideoElement>
