@@ -1,17 +1,18 @@
-// Empty state: the whole surface is a drop target for the first video.
+// Empty state: the whole surface is a drop target for the first video(s).
 
 import { useState } from 'react'
 import { isDesktop } from '../lib/desktop'
+import { isVideoFile } from '../lib/file'
 import { IconAlert, IconUpload } from './icons'
 
 interface DropZoneProps {
-  onFile: (file: File) => void
+  onFiles: (files: File[]) => void
   onPick: () => void
   busy: boolean
   error: string | null
 }
 
-export function DropZone({ onFile, onPick, busy, error }: DropZoneProps) {
+export function DropZone({ onFiles, onPick, busy, error }: DropZoneProps) {
   const [hovering, setHovering] = useState(false)
 
   return (
@@ -26,26 +27,26 @@ export function DropZone({ onFile, onPick, busy, error }: DropZoneProps) {
       onDrop={(event) => {
         event.preventDefault()
         setHovering(false)
-        const file = event.dataTransfer.files[0]
-        if (file) onFile(file)
+        const files = Array.from(event.dataTransfer.files).filter(isVideoFile)
+        if (files.length > 0) onFiles(files)
       }}
     >
       <div className="dropzone__card">
         <div className="dropzone__icon">
           <IconUpload size={26} />
         </div>
-        <h1>Drop a video here</h1>
+        <h1>Drop videos here</h1>
         <p className="dropzone__lead">
-          Pick a start and an end, then export. Nothing leaves
-          {isDesktop ? ' this machine' : ' this tab'}.
+          Add one or more videos, pick in/out points, then merge & export.
+          Nothing leaves{isDesktop ? ' this machine' : ' this tab'}.
         </p>
         <button type="button" className="button button--primary button--lg" onClick={onPick}>
-          {busy ? 'Reading file…' : 'Choose a video'}
+          {busy ? 'Reading file…' : 'Choose videos'}
         </button>
         <ul className="dropzone__facts">
           <li>MP4, WebM, MOV, MKV</li>
-          <li>Exact or lossless</li>
-          <li>Clip after clip</li>
+          <li>Multiple videos</li>
+          <li>Merge & export</li>
         </ul>
         {error ? (
           <p className="dropzone__error" role="alert">

@@ -14,8 +14,13 @@ function createId(): string {
 }
 
 function messageOf(error: unknown): string {
-  if (error instanceof Error) return error.message
-  return typeof error === 'string' ? error : 'Export failed'
+  const raw =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string' && error.trim()
+        ? error
+        : 'Bilinmeyen render hatası'
+  return raw.startsWith('Dışa Aktarma Başarısız') ? raw : `Dışa Aktarma Başarısız: ${raw}`
 }
 
 export function useExportQueue() {
@@ -39,24 +44,29 @@ export function useExportQueue() {
     let lastTick = 0
     update(next.id, { status: 'running', progress: 0, error: undefined })
 
-    renderClip({
-      id: next.id,
-      file: next.file,
-      sourcePath: next.sourcePath,
-      fileName: next.fileName,
-      start: next.start,
-      end: next.end,
-      settings: next.settings,
-      extension: next.extension,
-      sourceHeight: next.sourceHeight,
-      onProgress: (ratio) => {
-        const now = performance.now()
-        if (now - lastTick < PROGRESS_THROTTLE && ratio < 1) return
-        lastTick = now
-        update(next.id, { progress: ratio })
-      },
-    })
-      .then((result) => {
+    const runExportJob = async () => {
+      try {
+        const result = await renderClip({
+          id: next.id,
+          file: next.file,
+          sourcePath: next.sourcePath,
+          fileName: next.fileName,
+          start: next.start,
+          end: next.end,
+          pieces: next.pieces,
+          textSegments: next.textSegments,
+          settings: next.settings,
+          extension: next.extension,
+          sourceWidth: next.sourceWidth,
+          sourceHeight: next.sourceHeight,
+          onProgress: (ratio) => {
+            const now = performance.now()
+            if (now - lastTick < PROGRESS_THROTTLE && ratio < 1) return
+            lastTick = now
+            update(next.id, { progress: ratio })
+          },
+        })
+
         update(next.id, {
           status: 'done',
           progress: 1,
@@ -65,17 +75,22 @@ export function useExportQueue() {
           size: result.size,
         })
         if (result.url) downloadBlobUrl(result.url, next.fileName)
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         const canceled = canceledRef.current.delete(next.id) || error instanceof CanceledError
+        if (!canceled) {
+          console.error('Dışa Aktarma Başarısız (Export Queue):', error)
+          cancelRender(next.id)
+        }
         update(next.id, {
           status: canceled ? 'canceled' : 'error',
           error: canceled ? undefined : messageOf(error),
         })
-      })
-      .finally(() => {
+      } finally {
         runningRef.current = false
-      })
+      }
+    }
+
+    void runExportJob()
   }, [jobs, update])
 
   useEffect(

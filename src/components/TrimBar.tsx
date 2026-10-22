@@ -4,31 +4,38 @@ import type { Selection } from '../types'
 import { MIN_CLIP_DURATION } from '../lib/settings'
 import { formatDuration } from '../lib/time'
 import { TimeField } from './controls'
-import { IconMarkIn, IconMarkOut, IconScissors, IconSkipEnd } from './icons'
+import { IconMarkIn, IconMarkOut, IconMerge, IconScissors, IconSkipEnd } from './icons'
+
 
 interface TrimBarProps {
   selection: Selection
   duration: number
   canExport: boolean
+  videoCount: number
   onChange: (selection: Selection) => void
   onMarkIn: () => void
   onMarkOut: () => void
   onReset: () => void
   onExport: () => void
   onExportNext: () => void
+  onExportAll: () => void
 }
+
 
 export function TrimBar({
   selection,
   duration,
   canExport,
+  videoCount,
   onChange,
   onMarkIn,
   onMarkOut,
   onReset,
   onExport,
   onExportNext,
+  onExportAll,
 }: TrimBarProps) {
+
   return (
     <section className="trimbar">
       <div className="trimbar__times">
@@ -114,7 +121,19 @@ export function TrimBar({
           <IconScissors size={16} />
           Export clip
         </button>
+        {videoCount > 1 && (
+          <button
+            type="button"
+            className="button button--merge"
+            onClick={onExportAll}
+            title={`Merge all ${videoCount} video clips into one file`}
+          >
+            <IconMerge size={16} />
+            Merge all ({videoCount})
+          </button>
+        )}
       </div>
+
     </section>
   )
 }

@@ -14,6 +14,18 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
     ],
   },
   {
+    title: 'Editing',
+    items: [
+      ['Ctrl / ⌘ + Z', 'Undo'],
+      ['Ctrl / ⌘ + Shift + Z', 'Redo'],
+      ['S', 'Split at playhead'],
+      ['Ctrl / ⌘ + X', 'Cut selection'],
+      ['Ctrl / ⌘ + C', 'Copy selection'],
+      ['Ctrl / ⌘ + V', 'Paste at playhead'],
+      ['Delete / Backspace', 'Delete selection'],
+    ],
+  },
+  {
     title: 'Trimming',
     items: [
       ['I', 'Set the in point'],

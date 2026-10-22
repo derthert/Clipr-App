@@ -91,7 +91,7 @@ function failureFrom(output) {
 ipcMain.handle('clipr:run', async (event, request) => {
   const directory = writableDirectory(request.sourcePath)
   const output = uniquePath(directory, request.fileName)
-  const args = ['-y', '-nostdin', ...request.args].map((arg) =>
+  const args = ['-y', '-nostdin', '-progress', 'pipe:2', '-nostats', ...request.args].map((arg) =>
     arg === '@INPUT@' ? request.sourcePath : arg === '@OUTPUT@' ? output : arg,
   )
 
@@ -106,15 +106,28 @@ ipcMain.handle('clipr:run', async (event, request) => {
 
     running.set(request.id, child)
     let tail = ''
+    let progressBuffer = ''
 
     child.stderr.on('data', (chunk) => {
       const text = String(chunk)
       tail = (tail + text).slice(-4000)
-      const matches = [...text.matchAll(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/g)]
-      const last = matches[matches.length - 1]
-      if (!last || !request.duration) return
-      const seconds = Number(last[1]) * 3600 + Number(last[2]) * 60 + Number(last[3])
-      const ratio = Math.min(1, Math.max(0, seconds / request.duration))
+      progressBuffer += text
+      const lines = progressBuffer.split(/\r?\n/)
+      progressBuffer = lines.pop() ?? ''
+      let outputTime
+      let ended = false
+      for (const line of lines) {
+        if (line.startsWith('out_time_us=')) {
+          const value = Number(line.slice('out_time_us='.length))
+          if (Number.isFinite(value)) outputTime = value / 1_000_000
+        } else if (line === 'progress=end') {
+          ended = true
+        }
+      }
+      if (!request.duration || (outputTime === undefined && !ended)) return
+      const ratio = ended
+        ? 1
+        : Math.min(1, Math.max(0, outputTime / request.duration))
       if (!event.sender.isDestroyed()) {
         event.sender.send('clipr:progress', { id: request.id, ratio })
       }
@@ -127,6 +140,9 @@ ipcMain.handle('clipr:run', async (event, request) => {
 
     child.on('close', (code, signal) => {
       running.delete(request.id)
+      if (code === 0 && !signal && !event.sender.isDestroyed()) {
+        event.sender.send('clipr:progress', { id: request.id, ratio: 1 })
+      }
       if (signal) {
         fs.rmSync(output, { force: true })
         resolve({ ok: false, canceled: true })
@@ -137,7 +153,21 @@ ipcMain.handle('clipr:run', async (event, request) => {
         resolve({ ok: false, error: failureFrom(tail) })
         return
       }
-      resolve({ ok: true, path: output, size: fs.statSync(output).size })
+      try {
+        const size = fs.statSync(output).size
+        if (size <= 0) {
+          fs.rmSync(output, { force: true })
+          resolve({ ok: false, error: 'ffmpeg exited successfully but produced an empty file' })
+          return
+        }
+        resolve({ ok: true, path: output, size })
+      } catch (error) {
+        fs.rmSync(output, { force: true })
+        resolve({
+          ok: false,
+          error: `ffmpeg exited successfully but the output file could not be read: ${error.message}`,
+        })
+      }
     })
   })
 })

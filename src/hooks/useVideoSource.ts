@@ -75,6 +75,7 @@ export function useVideoSource() {
       if (urlRef.current) URL.revokeObjectURL(urlRef.current)
       urlRef.current = url
       setSource({
+        id: crypto.randomUUID?.() ?? `source-${Date.now()}`,
         file,
         url,
         path: desktop?.pathForFile(file) || undefined,

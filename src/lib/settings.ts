@@ -6,13 +6,20 @@ import { sanitizeFileName } from './file'
 
 export const MIN_CLIP_DURATION = 0.05
 export const FILE_NAME_TEMPLATE = '{name}_{start}-{end}'
-export const AUDIO_BITRATE = '160k'
+export const AUDIO_BITRATE = '128k'
+export const DEFAULT_FPS = '30'
+export const VIDEO_BITRATE = '2M'
+export const THREAD_COUNT = String(
+  typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+    ? Math.min(8, Math.max(4, navigator.hardwareConcurrency))
+    : 4,
+)
 
 export const DEFAULT_SETTINGS: ExportSettings = {
   mode: 'precise',
   format: 'mp4',
   quality: 'balanced',
-  scale: 'source',
+  scale: '720',
   muteAudio: false,
 }
 
@@ -22,9 +29,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
 }
 
 const QUALITY: Record<QualityPreset, { crf: string; preset: string }> = {
-  high: { crf: '19', preset: 'veryfast' },
-  balanced: { crf: '24', preset: 'veryfast' },
-  small: { crf: '30', preset: 'veryfast' },
+  high: { crf: '24', preset: 'ultrafast' },
+  balanced: { crf: '28', preset: 'ultrafast' },
+  small: { crf: '30', preset: 'ultrafast' },
 }
 
 const SCALE_HEIGHTS: Record<Exclude<ScalePreset, 'source'>, number> = {
@@ -33,12 +40,7 @@ const SCALE_HEIGHTS: Record<Exclude<ScalePreset, 'source'>, number> = {
   '480': 480,
 }
 
-const COPY_SAFE_CONTAINERS = new Set(['mp4', 'mkv', 'webm', 'mov', 'm4v', 'ts', 'avi', 'flv'])
-
-export function outputExtension(settings: ExportSettings, sourceExtension: string): string {
-  if (settings.mode === 'copy') {
-    return COPY_SAFE_CONTAINERS.has(sourceExtension) ? sourceExtension : 'mp4'
-  }
+export function outputExtension(settings: ExportSettings, _sourceExtension: string): string {
   return settings.format
 }
 
@@ -65,11 +67,11 @@ export function mimeForExtension(extension: string): string {
 function videoFilters(settings: ExportSettings, sourceHeight?: number): string[] {
   const filters: string[] = []
   if (settings.format === 'gif') filters.push('fps=12')
-  if (settings.scale !== 'source') {
-    const target = SCALE_HEIGHTS[settings.scale]
-    const height = sourceHeight ? Math.min(sourceHeight, target) : target
-    filters.push(`scale=-2:${Math.round(height / 2) * 2}:flags=lanczos`)
-  }
+  // Cap output resolution to max 1080p (or the selected 720p/480p preset)
+  const maxTarget = settings.scale === 'source' ? 1080 : SCALE_HEIGHTS[settings.scale]
+  const height = sourceHeight ? Math.min(sourceHeight, maxTarget) : maxTarget
+  const evenHeight = Math.max(2, Math.round(height / 2) * 2)
+  filters.push(`scale=-2:${evenHeight}:flags=fast_bilinear`)
   return filters
 }
 
@@ -91,16 +93,17 @@ export function buildFfmpegArgs({
   sourceHeight,
 }: CommandInput): string[] {
   const duration = Math.max(MIN_CLIP_DURATION, end - start)
-  const args = ['-hide_banner', '-ss', start.toFixed(3), '-i', input, '-t', duration.toFixed(3)]
+  const args = [
+    '-hide_banner',
+    '-ss',
+    start.toFixed(3),
+    '-i',
+    input,
+    '-t',
+    duration.toFixed(3),
+  ]
   const wantsAudio = !settings.muteAudio && settings.format !== 'gif'
   const filters = videoFilters(settings, sourceHeight)
-
-  if (settings.mode === 'copy') {
-    args.push('-map', '0:v:0?')
-    if (wantsAudio) args.push('-map', '0:a:0?')
-    args.push('-c', 'copy', output)
-    return args
-  }
 
   if (settings.format === 'mp3') {
     args.push('-vn', '-c:a', 'libmp3lame', '-b:a', AUDIO_BITRATE, output)
@@ -118,16 +121,30 @@ export function buildFfmpegArgs({
     return args
   }
 
+  // Always re-encode video with -c:v libx264, -preset ultrafast, capped resolution,
+  // -crf 28 / -b:v 2M, -r 30, and -threads for fast WASM execution.
   args.push('-map', '0:v:0?')
   if (wantsAudio) args.push('-map', '0:a:0?')
   if (filters.length) args.push('-vf', filters.join(','))
   args.push(
+    '-r',
+    DEFAULT_FPS,
+    '-threads',
+    THREAD_COUNT,
     '-c:v',
     'libx264',
     '-preset',
-    QUALITY[settings.quality].preset,
+    'ultrafast',
+    '-tune',
+    'zerolatency',
     '-crf',
     QUALITY[settings.quality].crf,
+    '-b:v',
+    VIDEO_BITRATE,
+    '-maxrate',
+    '2.5M',
+    '-bufsize',
+    '4M',
     '-pix_fmt',
     'yuv420p',
     '-movflags',

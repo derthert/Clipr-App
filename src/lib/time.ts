@@ -6,7 +6,7 @@ export const clamp = (value: number, min: number, max: number) =>
 const pad = (value: number, size = 2) => String(value).padStart(size, '0')
 
 export function formatTimecode(seconds: number, withMillis = true): string {
-  const total = Math.max(0, Math.round(seconds * 1000))
+  const total = Math.max(0, Math.round((Number.isFinite(seconds) ? seconds : 0) * 1000))
   const millis = total % 1000
   const totalSeconds = Math.floor(total / 1000)
   const hours = Math.floor(totalSeconds / 3600)
