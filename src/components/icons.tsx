@@ -211,3 +211,32 @@ export const IconMute = (props: { size?: number }) => (
     <path d="M16 10l4 4M20 10l-4 4" />
   </Icon>
 )
+
+export const IconMedia = (props: { size?: number }) => (
+  <Icon {...props}>
+    <rect x="3" y="5" width="13" height="14" rx="2.5" />
+    <path d="m16 10 5-3v10l-5-3" />
+    <path d="M9.5 9.5v5M7 12h5" />
+  </Icon>
+)
+
+export const IconText = (props: { size?: number }) => (
+  <Icon {...props}>
+    <path d="M5 7V5h14v2" />
+    <path d="M12 5v14M9 19h6" />
+  </Icon>
+)
+
+export const IconSimple = (props: { size?: number }) => (
+  <Icon {...props}>
+    <rect x="3" y="8" width="18" height="8" rx="2" />
+    <path d="M12 5v14" />
+  </Icon>
+)
+
+export const IconLayers = (props: { size?: number }) => (
+  <Icon {...props}>
+    <path d="m12 3 9 5-9 5-9-5 9-5Z" />
+    <path d="m3 13 9 5 9-5" />
+  </Icon>
+)

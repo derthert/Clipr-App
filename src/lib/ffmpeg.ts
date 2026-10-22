@@ -5,21 +5,48 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util'
 import type { CompositionPiece, ExportSettings, TextSegment } from '../types'
 import {
   AUDIO_BITRATE,
+  DECODE_THREAD_COUNT,
   DEFAULT_FPS,
+  FILTER_THREAD_COUNT,
   PREVIEW_REF_HEIGHT,
   THREAD_COUNT,
   buildFfmpegArgs,
   maxOutputHeight,
   mimeForExtension,
+  scaleFlags,
   x264Args,
+  type X264Preset,
 } from './settings'
 import { clamp } from './time'
+import { desktop } from './desktop'
 import { extensionOf } from './file'
+import { NativeEngine, type PipelineEngine } from './nativeEngine'
 
 export type EngineStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 const MOUNT_DIR = '/clipr'
 const CDN_CORE_BASE = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm'
+
+/**
+ * The multi-threaded core runs x264 and the decoders on several pthreads, but needs
+ * SharedArrayBuffer, which browsers only expose on cross-origin isolated pages
+ * (COOP/COEP headers, see vite.config.ts and public/coi-serviceworker.js).
+ */
+const MULTI_THREAD_AVAILABLE =
+  typeof SharedArrayBuffer !== 'undefined' && globalThis.crossOriginIsolated === true
+
+// Turned off for the rest of the session if the multi-threaded core ever stalls.
+let multiThreaded = MULTI_THREAD_AVAILABLE
+
+export function isMultiThreaded(): boolean {
+  return multiThreaded
+}
+
+function coreVariant() {
+  return multiThreaded
+    ? { dir: 'ffmpeg/mt', cdn: 'https://unpkg.com/@ffmpeg/core-mt@0.12.10/dist/esm' }
+    : { dir: 'ffmpeg', cdn: CDN_CORE_BASE }
+}
 const listeners = new Set<(status: EngineStatus) => void>()
 
 let engine: FFmpeg | null = null
@@ -42,7 +69,7 @@ export function subscribeEngine(listener: (status: EngineStatus) => void): () =>
 }
 
 function coreUrl(file: string): string {
-  return new URL(`${import.meta.env.BASE_URL}ffmpeg/${file}`, document.baseURI).href
+  return new URL(`${import.meta.env.BASE_URL}${coreVariant().dir}/${file}`, document.baseURI).href
 }
 
 /**
@@ -101,9 +128,20 @@ const load = async ({ coreURL: _coreURL, wasmURL: _wasmURL, workerURL: _workerUR
   return first;
 };
 
+// The multi-threaded core ends a run by throwing a non-Error value ("unwind"), and its
+// own wrapper then crashes reading e.message. The run has finished by then and ret holds
+// its exit code, so only that TypeError is swallowed.
+const runCore = (fn, args) => {
+  try {
+    fn(...args);
+  } catch (e) {
+    if (!(e instanceof TypeError && /startsWith/.test(e.message))) throw e;
+  }
+};
+
 const exec = ({ args, timeout = -1 }) => {
   ffmpeg.setTimeout(timeout);
-  ffmpeg.exec(...args);
+  runCore(ffmpeg.exec, args);
   const ret = ffmpeg.ret;
   ffmpeg.reset();
   return ret;
@@ -111,7 +149,7 @@ const exec = ({ args, timeout = -1 }) => {
 
 const ffprobe = ({ args, timeout = -1 }) => {
   ffmpeg.setTimeout(timeout);
-  ffmpeg.ffprobe(...args);
+  runCore(ffmpeg.ffprobe, args);
   const ret = ffmpeg.ret;
   ffmpeg.reset();
   return ret;
@@ -240,7 +278,7 @@ async function resolveAssetBlobUrl(file: string, mimeType: string): Promise<stri
     if (!check.ok) throw new Error(`HTTP ${check.status}`)
     return await toBlobURL(localUrl, mimeType)
   } catch (localErr) {
-    const cdnUrl = `${CDN_CORE_BASE}/${file}`
+    const cdnUrl = `${coreVariant().cdn}/${file}`
     console.warn(
       `[FFmpeg Init] Yerel dosya bulunamadı (${localUrl}), CDN üzerinden çekiliyor: ${cdnUrl}`,
       localErr,
@@ -277,10 +315,13 @@ async function createEngine(): Promise<FFmpeg> {
 
   try {
     console.log('[FFmpeg Init] 1/3: WASM ve Core Blob URL yolları hazırlanıyor...')
-    const [classWorkerURL, coreBlobUrl, wasmBlobUrl] = await Promise.all([
+    const [classWorkerURL, coreBlobUrl, wasmBlobUrl, pthreadWorkerUrl] = await Promise.all([
       Promise.resolve(createWorkerBlobUrl()),
       resolveAssetBlobUrl('ffmpeg-core.js', 'text/javascript'),
       resolveAssetBlobUrl('ffmpeg-core.wasm', 'application/wasm'),
+      multiThreaded
+        ? resolveAssetBlobUrl('ffmpeg-core.worker.js', 'text/javascript')
+        : Promise.resolve(undefined),
     ])
 
     console.log('[FFmpeg Init] 2/3: ffmpeg.load() çağrılıyor...', {
@@ -294,6 +335,7 @@ async function createEngine(): Promise<FFmpeg> {
         classWorkerURL,
         coreURL: coreBlobUrl,
         wasmURL: wasmBlobUrl,
+        workerURL: pthreadWorkerUrl,
       }),
       45_000,
       'FFmpeg motoru başlatılırken zaman aşımı oluştu (starting up timeout).',
@@ -341,7 +383,11 @@ export function cancelRender(): void {
   setStatus('idle')
 }
 
-async function mountInput(instance: FFmpeg, file: File) {
+async function mountInput(instance: PipelineEngine, file: File) {
+  if (instance instanceof NativeEngine) {
+    return { path: await instance.inputPath(file), release: async () => undefined }
+  }
+  if (!(instance instanceof FFmpeg)) throw new Error('Unknown ffmpeg engine')
   try {
     await instance.createDir(MOUNT_DIR).catch(() => undefined)
     await instance.unmount(MOUNT_DIR).catch(() => undefined)
@@ -363,6 +409,64 @@ async function mountInput(instance: FFmpeg, file: File) {
 /** ffmpeg ran to completion but failed; the wasm engine itself is still healthy. */
 class ExitError extends Error {}
 
+/** The multi-threaded core deadlocked (went silent) or one of its pthreads crashed. */
+class MultiThreadError extends Error {}
+
+// ffmpeg prints a stats line about twice a second while it works.
+const STALL_MS = 20_000
+
+// The multi-threaded core pre-spawns 32 pthreads and deadlocks when one run asks for
+// more, which ffmpeg's defaults do on many-core machines: the decoder, the filter graph
+// and x264 each size their pools from the CPU count. Every run gets an explicit budget,
+// and a run that stops logging is abandoned so the caller can retry single-threaded.
+function execFfmpeg(instance: PipelineEngine, args: string[]): Promise<number> {
+  if (!(instance instanceof FFmpeg) || !multiThreaded) return instance.exec(args)
+  const capped = [
+    '-filter_threads', FILTER_THREAD_COUNT,
+    '-filter_complex_threads', FILTER_THREAD_COUNT,
+  ]
+  for (const arg of args) {
+    if (arg === '-i') capped.push('-threads', DECODE_THREAD_COUNT)
+    capped.push(arg)
+  }
+
+  return new Promise<number>((resolve, reject) => {
+    let lastActivity = performance.now()
+    let crashed = false
+    const touch = () => {
+      lastActivity = performance.now()
+    }
+    const onLog = ({ message }: { message: string }) => {
+      touch()
+      // A crashed pthread (e.g. "function signature mismatch") leaves the engine broken.
+      if (message.includes('worker sent an error')) crashed = true
+    }
+    const cleanup = () => {
+      window.clearInterval(watchdog)
+      instance.off('log', onLog)
+      instance.off('progress', touch)
+    }
+    const watchdog = window.setInterval(() => {
+      if (performance.now() - lastActivity < STALL_MS) return
+      cleanup()
+      reject(new MultiThreadError('ffmpeg stopped responding'))
+    }, 1000)
+    instance.on('log', onLog)
+    instance.on('progress', touch)
+    instance.exec(capped).then(
+      (code) => {
+        cleanup()
+        if (crashed) reject(new MultiThreadError('a multi-threaded ffmpeg worker crashed'))
+        else resolve(code)
+      },
+      (error: unknown) => {
+        cleanup()
+        reject(error)
+      },
+    )
+  })
+}
+
 function describeFailure(logs: string[]): string {
   const meaningful = logs
     .filter((line) => /error|invalid|unable|failed|not found|no such|cannot/i.test(line))
@@ -371,6 +475,7 @@ function describeFailure(logs: string[]): string {
 }
 
 function formatExportError(error: unknown, logs: string[]): Error {
+  if (error instanceof MultiThreadError) return error
   const raw =
     error instanceof Error
       ? error.message
@@ -403,17 +508,12 @@ function computeTargetDimensions(
     baseH = 720
   }
 
-  // Always cap output resolution to max 1080p (or 720p/480p preset)
+  // The selected size caps the height; 'Original' keeps the first clip's resolution.
   const maxHeight = maxOutputHeight(settings.scale)
-  if (baseH > maxHeight) {
+  if (maxHeight !== undefined && baseH > maxHeight) {
     const ratio = maxHeight / baseH
     baseW = Math.round(baseW * ratio)
     baseH = maxHeight
-  }
-  if (baseW > 1920) {
-    const ratio = 1920 / baseW
-    baseW = 1920
-    baseH = Math.round(baseH * ratio)
   }
 
   const evenW = Math.max(2, Math.round(baseW / 2) * 2)
@@ -422,6 +522,10 @@ function computeTargetDimensions(
 }
 
 export interface RenderRequest {
+  id: string
+  /** Final file name; the desktop app saves the output under it next to the source. */
+  fileName: string
+  sourcePath?: string
   file: File
   start: number
   end: number
@@ -508,7 +612,7 @@ async function renderTextSegmentToPng(
 }
 
 async function prepareWindowOverlays(
-  instance: FFmpeg,
+  instance: PipelineEngine,
   textSegments: TextSegment[] | undefined,
   windowStart: number,
   windowDuration: number,
@@ -555,7 +659,7 @@ function buildOverlayFilterComplex(
     const ov = overlays[k]
     const inIdx = firstOverlayInputIdx + k
     parts.push(
-      `[v${k}][${inIdx}:v]overlay=${ov.x}:${ov.y}:enable='between(t,${ov.relStart.toFixed(3)},${ov.relEnd.toFixed(3)})':format=auto[v${k + 1}]`,
+      `[v${k}][${inIdx}:v]overlay=${ov.x}:${ov.y}:enable='between(t,${ov.relStart.toFixed(3)},${ov.relEnd.toFixed(3)})':format=yuv420[v${k + 1}]`,
     )
   }
   return {
@@ -564,8 +668,56 @@ function buildOverlayFilterComplex(
   }
 }
 
-async function executeSingle(request: RenderRequest): Promise<Blob> {
-  const instance = await ensureEngine()
+export type RenderOutput = { blob: Blob } | { path: string; size: number }
+
+function encoderPreset(instance: PipelineEngine): X264Preset {
+  return instance instanceof NativeEngine ? 'veryfast' : 'ultrafast'
+}
+
+/** Desktop jobs run on the bundled ffmpeg binary, the browser uses ffmpeg.wasm. */
+function acquireEngine(request: RenderRequest): Promise<PipelineEngine> {
+  return desktop ? NativeEngine.open(desktop, request.id) : ensureEngine()
+}
+
+async function collectOutput(
+  instance: PipelineEngine,
+  output: string,
+  request: RenderRequest,
+): Promise<RenderOutput> {
+  if (instance instanceof NativeEngine) {
+    return instance.finish(output, request.fileName, request.sourcePath)
+  }
+  if (!(instance instanceof FFmpeg)) throw new Error('Unknown ffmpeg engine')
+  const data = await instance.readFile(output)
+  const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data
+  if (!bytes.length) throw new ExitError('ffmpeg produced an empty file')
+  return { blob: new Blob([bytes as unknown as BlobPart], { type: mimeForExtension(request.extension) }) }
+}
+
+/** Frees the job's files: the whole temp folder on desktop, single files in the wasm FS. */
+async function releaseEngine(
+  instance: PipelineEngine,
+  files: string[],
+  unmount?: () => Promise<unknown>,
+) {
+  if (instance instanceof NativeEngine) {
+    await instance.close().catch(() => undefined)
+    return
+  }
+  // A terminated (canceled or crashed) engine has nothing left to clean.
+  if (engine !== instance) return
+  await withTimeout(
+    (async () => {
+      for (const f of files) await instance.deleteFile(f).catch(() => undefined)
+      await unmount?.()
+    })(),
+    2000,
+    'cleanup timeout',
+  ).catch(() => undefined)
+}
+
+async function executeSingle(request: RenderRequest): Promise<RenderOutput> {
+  const instance = await acquireEngine(request)
   const output = `clip.${request.extension}`
   const duration = Math.max(0.04, request.end - request.start)
   const logs: string[] = []
@@ -609,7 +761,7 @@ async function executeSingle(request: RenderRequest): Promise<Blob> {
 
     if (overlays.length > 0) {
       const wantsAudio = !request.settings.muteAudio && request.settings.format !== 'gif'
-      const baseVf = `scale=-2:${targetH}:flags=fast_bilinear,format=yuv420p`
+      const baseVf = `scale=-2:${targetH}:flags=${scaleFlags(encoderPreset(instance))},format=yuv420p`
       const { filterComplex, outLabel } = buildOverlayFilterComplex(baseVf, overlays, 1)
       const overlayInputs = overlays.flatMap((ov) => ['-i', ov.fileName])
 
@@ -620,7 +772,7 @@ async function executeSingle(request: RenderRequest): Promise<Blob> {
           '[sample]palettegen=stats_mode=diff[palette]',
           '[frames][palette]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle[gifout]',
         ].join(';')
-        code = await instance.exec([
+        code = await execFfmpeg(instance, [
           '-hide_banner',
           '-ss', request.start.toFixed(3),
           '-i', mounted.path,
@@ -634,7 +786,7 @@ async function executeSingle(request: RenderRequest): Promise<Blob> {
           output,
         ])
       } else {
-        code = await instance.exec([
+        code = await execFfmpeg(instance, [
           '-hide_banner',
           '-ss', request.start.toFixed(3),
           '-i', mounted.path,
@@ -643,14 +795,15 @@ async function executeSingle(request: RenderRequest): Promise<Blob> {
           '-filter_complex', filterComplex,
           '-map', outLabel,
           ...(wantsAudio ? ['-map', '0:a:0?'] : ['-an']),
-          ...x264Args(request.settings.quality),
+          ...x264Args(request.settings.quality, encoderPreset(instance)),
           '-movflags', '+faststart',
           ...(wantsAudio ? ['-c:a', 'aac', '-b:a', AUDIO_BITRATE] : []),
           output,
         ])
       }
     } else {
-      code = await instance.exec(
+      code = await execFfmpeg(
+        instance,
         buildFfmpegArgs({
           input: mounted.path,
           output,
@@ -658,44 +811,30 @@ async function executeSingle(request: RenderRequest): Promise<Blob> {
           end: request.end,
           settings: { ...request.settings, mode: 'precise' },
           sourceHeight: request.sourceHeight,
+          preset: encoderPreset(instance),
         }),
       )
     }
 
     if (code !== 0) throw new ExitError(describeFailure(logs))
-    const data = await instance.readFile(output)
-    const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data
-    if (!bytes.length) throw new ExitError('ffmpeg produced an empty file')
-    return new Blob([bytes as unknown as BlobPart], { type: mimeForExtension(request.extension) })
+    return await collectOutput(instance, output, request)
   } catch (error) {
     console.error('[FFmpeg executeSingle Export Hatası]', error, { logs })
     // A non-zero exit leaves the engine usable; only reset it after crashes or aborts.
-    if (!(error instanceof ExitError)) cancelRender()
+    if (instance instanceof FFmpeg && !(error instanceof ExitError)) cancelRender()
     throw formatExportError(error, logs)
   } finally {
     instance.off('log', onLog)
     instance.off('progress', onProgress)
-    if (engine === instance) {
-      await withTimeout(
-        (async () => {
-          await instance.deleteFile(output).catch(() => undefined)
-          for (const f of overlayFiles) {
-            await instance.deleteFile(f).catch(() => undefined)
-          }
-          await mounted.release()
-        })(),
-        2000,
-        'cleanup timeout',
-      ).catch(() => undefined)
-    }
+    await releaseEngine(instance, [output, ...overlayFiles], mounted.release)
   }
 }
 
 async function executeComposition(
   request: RenderRequest,
   pieces: CompositionPiece[],
-): Promise<Blob> {
-  const instance = await ensureEngine()
+): Promise<RenderOutput> {
+  const instance = await acquireEngine(request)
   const output = `composition.${request.extension}`
   const totalDuration = Math.max(
     0.04,
@@ -742,7 +881,7 @@ async function executeComposition(
 
       if (isAudioOnly) {
         if (piece.kind === 'gap' || request.settings.muteAudio) {
-          const code = await instance.exec([
+          const code = await execFfmpeg(instance, [
             '-hide_banner',
             '-f', 'lavfi',
             '-t', dur.toFixed(3),
@@ -755,7 +894,7 @@ async function executeComposition(
         } else {
           const mounted = await mountInput(instance, piece.file)
           try {
-            let code = await instance.exec([
+            let code = await execFfmpeg(instance, [
               '-hide_banner',
               '-ss', piece.sourceStart.toFixed(3),
               '-i', mounted.path,
@@ -769,7 +908,7 @@ async function executeComposition(
             ])
             if (code !== 0) {
               // Fallback to silent audio if source clip has no audio track
-              code = await instance.exec([
+              code = await execFfmpeg(instance, [
                 '-hide_banner',
                 '-f', 'lavfi',
                 '-t', dur.toFixed(3),
@@ -828,14 +967,14 @@ async function executeComposition(
             : []),
           ...overlayInputs,
           ...filterArgs,
-          ...x264Args(request.settings.quality),
+          ...x264Args(request.settings.quality, encoderPreset(instance)),
           ...(wantsAudio
             ? ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', AUDIO_BITRATE, '-shortest']
             : ['-an']),
           '-f', 'mpegts',
           partName,
         ]
-        const code = await instance.exec(gapArgs)
+        const code = await execFfmpeg(instance, gapArgs)
         if (code !== 0) throw new ExitError(describeFailure(logs))
       } else {
         const mounted = await mountInput(instance, piece.file)
@@ -854,7 +993,7 @@ async function executeComposition(
           Math.abs(piece.width - targetW) <= 2 && Math.abs(piece.height - targetH) <= 2
         const vf = sameDims
           ? 'format=yuv420p'
-          : `scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=yuv420p`
+          : `scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease:flags=${scaleFlags(encoderPreset(instance))},pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=yuv420p`
         const overlayInputs = pieceOverlays.flatMap((ov) => ['-i', ov.fileName])
         try {
           let code = -1
@@ -874,7 +1013,7 @@ async function executeComposition(
                   })()
                 : ['-map', '0:v:0', '-map', '0:a:0', '-vf', vf]
 
-            code = await instance.exec([
+            code = await execFfmpeg(instance, [
               '-hide_banner',
               '-ss', piece.sourceStart.toFixed(3),
               '-i', mounted.path,
@@ -882,7 +1021,7 @@ async function executeComposition(
               ...overlayInputs,
               ...videoMapAndFilter,
               '-af', 'aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo',
-              ...x264Args(request.settings.quality),
+              ...x264Args(request.settings.quality, encoderPreset(instance)),
               '-c:a', 'aac',
               '-ar', '44100',
               '-ac', '2',
@@ -924,14 +1063,14 @@ async function executeComposition(
                 : []),
               ...overlayInputs,
               ...videoMapAndFilter,
-              ...x264Args(request.settings.quality),
+              ...x264Args(request.settings.quality, encoderPreset(instance)),
               ...(wantsAudio
                 ? ['-c:a', 'aac', '-ar', '44100', '-ac', '2', '-b:a', AUDIO_BITRATE, '-shortest']
                 : ['-an']),
               '-f', 'mpegts',
               partName,
             ]
-            code = await instance.exec(fallbackArgs)
+            code = await execFfmpeg(instance, fallbackArgs)
           }
 
           if (code !== 0) throw new ExitError(describeFailure(logs))
@@ -984,42 +1123,24 @@ async function executeComposition(
       ]
     }
 
-    const concatCode = await instance.exec(concatArgs)
+    const concatCode = await execFfmpeg(instance, concatArgs)
     if (concatCode !== 0) throw new ExitError(describeFailure(logs))
 
     request.onProgress?.(1)
-    const data = await instance.readFile(output)
-    const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data
-    if (!bytes.length) throw new ExitError('ffmpeg produced an empty file')
-    return new Blob([bytes as unknown as BlobPart], { type: mimeForExtension(request.extension) })
+    return await collectOutput(instance, output, request)
   } catch (error) {
     console.error('[FFmpeg executeComposition Export Hatası]', error, { logs })
     // A non-zero exit leaves the engine usable; only reset it after crashes or aborts.
-    if (!(error instanceof ExitError)) cancelRender()
+    if (instance instanceof FFmpeg && !(error instanceof ExitError)) cancelRender()
     throw formatExportError(error, logs)
   } finally {
     instance.off('log', onLog)
     instance.off('progress', onProgress)
-    if (engine === instance) {
-      await withTimeout(
-        (async () => {
-          await instance.deleteFile(output).catch(() => undefined)
-          await instance.deleteFile(concatListFile).catch(() => undefined)
-          for (const part of partFiles) {
-            await instance.deleteFile(part).catch(() => undefined)
-          }
-          for (const f of tempOverlayFiles) {
-            await instance.deleteFile(f).catch(() => undefined)
-          }
-        })(),
-        2000,
-        'cleanup timeout',
-      ).catch(() => undefined)
-    }
+    await releaseEngine(instance, [output, concatListFile, ...partFiles, ...tempOverlayFiles])
   }
 }
 
-async function execute(request: RenderRequest): Promise<Blob> {
+function executeOnce(request: RenderRequest): Promise<RenderOutput> {
   const pieces = request.pieces
   if (pieces && (pieces.length > 1 || pieces[0]?.kind === 'gap')) {
     return executeComposition(request, pieces)
@@ -1027,7 +1148,19 @@ async function execute(request: RenderRequest): Promise<Blob> {
   return executeSingle(request)
 }
 
-export function renderClip(request: RenderRequest): Promise<Blob> {
+async function execute(request: RenderRequest): Promise<RenderOutput> {
+  try {
+    return await executeOnce(request)
+  } catch (error) {
+    if (!(error instanceof MultiThreadError)) throw error
+    console.warn('[FFmpeg] multi-threaded core failed, retrying single-threaded', error)
+    multiThreaded = false
+    cancelRender()
+    return executeOnce(request)
+  }
+}
+
+export function renderClip(request: RenderRequest): Promise<RenderOutput> {
   const run = chain.then(
     () => execute(request),
     () => execute(request),
@@ -1036,7 +1169,9 @@ export function renderClip(request: RenderRequest): Promise<Blob> {
   return run
 }
 
-export function previewCommand(request: Omit<RenderRequest, 'file' | 'onProgress'>): string {
+export function previewCommand(
+  request: Pick<RenderRequest, 'start' | 'end' | 'settings' | 'extension' | 'sourceHeight'>,
+): string {
   const args = buildFfmpegArgs({
     input: 'input.mp4',
     output: `clip.${request.extension}`,
@@ -1044,6 +1179,7 @@ export function previewCommand(request: Omit<RenderRequest, 'file' | 'onProgress
     end: request.end,
     settings: request.settings,
     sourceHeight: request.sourceHeight,
+    preset: desktop ? 'veryfast' : 'ultrafast',
   })
   return `ffmpeg ${args.map((arg) => (arg.includes(' ') ? `"${arg}"` : arg)).join(' ')}`
 }

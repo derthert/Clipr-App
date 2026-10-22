@@ -172,6 +172,98 @@ ipcMain.handle('clipr:run', async (event, request) => {
   })
 })
 
+// Workspaces: a temp folder per export job, used by the multi-clip and text pipeline.
+// ffmpeg runs with the folder as its working directory, so the renderer refers to
+// intermediate files (parts, overlays, concat list, output) by bare names.
+const workspaces = new Map()
+
+function workspaceFile(id, name) {
+  const directory = workspaces.get(id)
+  if (!directory) throw new Error('Unknown export workspace')
+  if (path.basename(name) !== name) throw new Error(`Invalid workspace file name: ${name}`)
+  return path.join(directory, name)
+}
+
+ipcMain.handle('clipr:workspace-open', (_event, id) => {
+  workspaces.set(id, fs.mkdtempSync(path.join(app.getPath('temp'), 'clipr-')))
+})
+
+ipcMain.handle('clipr:workspace-write', (_event, id, name, bytes) => {
+  fs.writeFileSync(workspaceFile(id, name), bytes)
+})
+
+ipcMain.handle('clipr:workspace-delete', (_event, id, name) => {
+  fs.rmSync(workspaceFile(id, name), { force: true })
+})
+
+ipcMain.handle('clipr:workspace-exec', (event, id, args) => {
+  const cwd = workspaces.get(id)
+  if (!cwd) return { code: -1, error: 'Unknown export workspace' }
+
+  return new Promise((resolve) => {
+    let child
+    try {
+      child = spawn(FFMPEG, ['-y', '-nostdin', '-progress', 'pipe:2', '-nostats', ...args], {
+        cwd,
+        windowsHide: true,
+      })
+    } catch (error) {
+      resolve({ code: -1, error: error.message })
+      return
+    }
+
+    running.set(id, child)
+    let buffer = ''
+    child.stderr.on('data', (chunk) => {
+      buffer += String(chunk)
+      const lines = buffer.split(/\r?\n/)
+      buffer = lines.pop() ?? ''
+      const logs = []
+      let time
+      for (const line of lines) {
+        if (line.startsWith('out_time_us=')) {
+          const value = Number(line.slice('out_time_us='.length))
+          if (Number.isFinite(value)) time = value / 1_000_000
+        } else if (line.trim() && !/^[a-z_]+=/.test(line)) {
+          logs.push(line)
+        }
+      }
+      if (!event.sender.isDestroyed() && (logs.length || time !== undefined)) {
+        event.sender.send('clipr:workspace-output', { id, logs, time })
+      }
+    })
+    child.on('error', (error) => {
+      running.delete(id)
+      resolve({ code: -1, error: error.message })
+    })
+    child.on('close', (code, signal) => {
+      running.delete(id)
+      resolve(signal ? { code: -1, canceled: true } : { code: code ?? -1 })
+    })
+  })
+})
+
+// Moves the finished file next to the source video (or into Downloads).
+ipcMain.handle('clipr:workspace-finish', (_event, id, name, fileName, sourcePath) => {
+  const from = workspaceFile(id, name)
+  const size = fs.statSync(from).size
+  if (size <= 0) throw new Error('ffmpeg produced an empty file')
+  const to = uniquePath(writableDirectory(sourcePath), fileName)
+  try {
+    fs.renameSync(from, to)
+  } catch {
+    // Different drive than the temp folder.
+    fs.copyFileSync(from, to)
+  }
+  return { path: to, size }
+})
+
+ipcMain.handle('clipr:workspace-close', (_event, id) => {
+  const directory = workspaces.get(id)
+  workspaces.delete(id)
+  if (directory) fs.rmSync(directory, { recursive: true, force: true })
+})
+
 ipcMain.handle('clipr:cancel', (_event, id) => {
   const child = running.get(id)
   if (child) child.kill()
@@ -191,5 +283,6 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   for (const child of running.values()) child.kill()
+  for (const directory of workspaces.values()) fs.rmSync(directory, { recursive: true, force: true })
   if (process.platform !== 'darwin') app.quit()
 })

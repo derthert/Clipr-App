@@ -23,6 +23,8 @@ interface EditBarProps {
   onClearSel: () => void
   onExportAll: () => void
   onAddVideos: () => void
+  /** Cut / Copy / Paste buttons; hidden in the Simple editor profile. */
+  showClipboard: boolean
 }
 
 // Split icon
@@ -118,6 +120,7 @@ export function EditBar({
   onClearSel,
   onExportAll,
   onAddVideos,
+  showClipboard,
 }: EditBarProps) {
   const hasRangeSel = Boolean(selection && selection.end - selection.start > 0.04)
   const canEditClipOrSel = Boolean(selectedClip) || hasRangeSel
@@ -141,6 +144,8 @@ export function EditBar({
           Split
         </button>
         <div className="editbar__divider" />
+        {showClipboard ? (
+          <>
         <button
           type="button"
           className="button button--sm editbar__btn"
@@ -171,6 +176,8 @@ export function EditBar({
           <IconPaste size={15} />
           Paste
         </button>
+          </>
+        ) : null}
         <button
           type="button"
           className="button button--sm editbar__btn editbar__btn--danger"

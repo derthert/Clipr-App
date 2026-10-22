@@ -10,6 +10,27 @@
       content="Pick a start and an end, export the clip. Runs entirely in your browser, no upload, no server."
     />
     <meta name="color-scheme" content="dark light" />
+    <script>
+      // Cross-origin isolation for the multi-threaded ffmpeg core, see coi-serviceworker.js.
+      // The first visit registers the worker and reloads once so it can add the headers.
+      ;(function () {
+        if (window.crossOriginIsolated || !window.isSecureContext) return
+        if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return
+        navigator.serviceWorker
+          .register('./coi-serviceworker.js')
+          .then(function () {
+            // Already controlled but still not isolated: the browser won't honor it, so the
+            // app keeps the single-threaded core instead of reloading forever.
+            if (navigator.serviceWorker.controller) return
+            return navigator.serviceWorker.ready.then(function () {
+              if (sessionStorage.getItem('clipr-coi-reload')) return
+              sessionStorage.setItem('clipr-coi-reload', '1')
+              location.reload()
+            })
+          })
+          .catch(function () {})
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

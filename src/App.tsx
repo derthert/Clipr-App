@@ -7,6 +7,7 @@ import type { CompositionPiece, ExportSettings, Preferences, Selection, VideoSou
 import { APP_NAME, REPO_URL } from './config'
 import { CompositeTimeline } from './components/CompositeTimeline'
 import { DropZone } from './components/DropZone'
+import { IconLayers, IconMedia, IconSimple, IconText } from './components/icons'
 import { EditBar } from './components/EditBar'
 import { Header } from './components/Header'
 import { Player } from './components/Player'
@@ -70,6 +71,9 @@ export default function App() {
   const hasVideos = tl.views.length > 0 || tl.sources.size > 0
   const selectedClip = tl.views.find((v) => v.id === tl.selectedClipId) ?? null
   const selectedText = tl.textSegments.find((t) => t.id === tl.selectedTextId) ?? null
+  const isFullEditor = preferences.value.editorProfile === 'full'
+  const toggleProfile = () =>
+    preferences.patch({ editorProfile: isFullEditor ? 'simple' : 'full' })
 
   // Find the first source that has a meaningful extension for settings preview
   const firstSource = [...tl.sources.values()][0]
@@ -253,23 +257,47 @@ export default function App() {
       {hasVideos ? (
         <div className="editor-shell">
           <aside className="toolrail" aria-label="Editor tools">
+            <div className="toolrail__group">
+              <button
+                type="button"
+                className="toolrail__item"
+                onClick={pickFile}
+                title="Add videos to the timeline"
+              >
+                <span className="toolrail__icon">
+                  <IconMedia size={20} />
+                </span>
+                <span className="toolrail__label">Media</span>
+              </button>
+              {isFullEditor ? (
+                <button
+                  type="button"
+                  className={`toolrail__item${tl.selectedTextId ? ' toolrail__item--active' : ''}`}
+                  onClick={() => tl.addTextSegment(playback.time)}
+                  title="Add a text clip at the playhead"
+                >
+                  <span className="toolrail__icon">
+                    <IconText size={20} />
+                  </span>
+                  <span className="toolrail__label">Text</span>
+                </button>
+              ) : null}
+            </div>
+
             <button
               type="button"
-              className={`toolrail__item${!tl.selectedTextId ? ' toolrail__item--active' : ''}`}
-              onClick={pickFile}
-              title="Add media to timeline"
+              className="toolrail__item toolrail__item--profile"
+              onClick={toggleProfile}
+              title={
+                isFullEditor
+                  ? 'Full editor: text and clipboard tools. Click for the Simple editor.'
+                  : 'Simple editor: split and trim only. Click for the Full editor.'
+              }
             >
-              <span className="toolrail__icon">+</span>
-              <span>Media</span>
-            </button>
-            <button
-              type="button"
-              className={`toolrail__item${tl.selectedTextId ? ' toolrail__item--active' : ''}`}
-              onClick={() => tl.addTextSegment(playback.time)}
-              title="Add independent Text Track layer"
-            >
-              <span className="toolrail__icon">T</span>
-              <span>Text</span>
+              <span className="toolrail__icon">
+                {isFullEditor ? <IconLayers size={18} /> : <IconSimple size={18} />}
+              </span>
+              <span className="toolrail__label">{isFullEditor ? 'Full' : 'Simple'}</span>
             </button>
           </aside>
 
@@ -292,9 +320,6 @@ export default function App() {
                 <span className="workspace__eyebrow">Your project</span>
                 <h1>Make something great</h1>
               </div>
-              <button type="button" className="button button--sm" onClick={pickFile}>
-                Add media
-              </button>
             </div>
 
             <Player
@@ -328,7 +353,7 @@ export default function App() {
               views={tl.views}
               sources={tl.sources}
               textSegments={tl.textSegments}
-              hasTextTrack={tl.hasTextTrack}
+              hasTextTrack={isFullEditor && tl.hasTextTrack}
               totalDuration={tl.totalDuration}
               time={playback.time}
               selectedClipId={tl.selectedClipId}
@@ -361,6 +386,7 @@ export default function App() {
               onClearSel={handleClearSelection}
               onExportAll={exportAll}
               onAddVideos={pickFile}
+              showClipboard={isFullEditor}
             />
 
             <QueueStrip
@@ -376,6 +402,8 @@ export default function App() {
       ) : (
         <>
           <DropZone
+            profile={preferences.value.editorProfile}
+            onProfile={(editorProfile) => preferences.patch({ editorProfile })}
             onFiles={(files) => void tl.addFiles(files)}
             onPick={pickFile}
             busy={tl.busy}
@@ -393,11 +421,12 @@ export default function App() {
       {dialog === 'shortcuts' ? <ShortcutsDialog onClose={() => setDialog('none')} /> : null}
       {dialog === 'settings' ? (
         <SettingsDialog
+          profile={preferences.value.editorProfile}
+          onProfile={(editorProfile) => preferences.patch({ editorProfile })}
           settings={settings.value}
           onChange={settings.patch}
           onReset={settings.reset}
           onClose={() => setDialog('none')}
-          sourceExtension={firstSource?.extension ?? ''}
           command={previewCommand({
             start: selection?.start ?? 0,
             end: selection?.end ?? playback.totalDuration,

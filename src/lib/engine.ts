@@ -1,9 +1,10 @@
-// One entry point for rendering: the bundled ffmpeg binary on desktop (for single-file cuts),
-// or the multi-segment composition renderer in ffmpeg.wasm.
+// One entry point for rendering. Plain single-file cuts on desktop go straight to the
+// bundled ffmpeg binary; everything else runs the composition pipeline in ffmpeg.ts, which
+// itself uses the bundled binary on desktop and ffmpeg.wasm in the browser.
 
 import type { CompositionPiece, ExportSettings, TextSegment } from '../types'
 import { desktop } from './desktop'
-import { cancelRender as cancelWasm, renderClip as renderWithWasm } from './ffmpeg'
+import { cancelRender as cancelWasm, renderClip as renderPipeline } from './ffmpeg'
 import { buildFfmpegArgs } from './settings'
 
 export interface ClipRequest {
@@ -36,7 +37,7 @@ export class CanceledError extends Error {
 }
 
 // Jobs currently handled by the desktop ffmpeg binary. Canceling one of them must not
-// terminate the shared ffmpeg.wasm engine, which timeline and text exports still rely on.
+// terminate the shared ffmpeg.wasm engine.
 const desktopJobs = new Set<string>()
 
 export async function renderClip(request: ClipRequest): Promise<ClipResult> {
@@ -59,6 +60,7 @@ export async function renderClip(request: ClipRequest): Promise<ClipResult> {
             end: request.end,
             settings: effectiveSettings,
             sourceHeight: request.sourceHeight,
+            preset: 'veryfast',
           }),
           sourcePath: request.sourcePath,
           fileName: request.fileName,
@@ -73,7 +75,11 @@ export async function renderClip(request: ClipRequest): Promise<ClipResult> {
       return { path: result.path, size: result.size ?? 0 }
     }
 
-    const blob = await renderWithWasm({
+    if (desktop) desktopJobs.add(request.id)
+    const output = await renderPipeline({
+      id: request.id,
+      fileName: request.fileName,
+      sourcePath: request.sourcePath,
       file: request.file,
       start: request.start,
       end: request.end,
@@ -84,8 +90,9 @@ export async function renderClip(request: ClipRequest): Promise<ClipResult> {
       sourceWidth: request.sourceWidth,
       sourceHeight: request.sourceHeight,
       onProgress: request.onProgress,
-    })
-    return { url: URL.createObjectURL(blob), size: blob.size }
+    }).finally(() => desktopJobs.delete(request.id))
+    if ('blob' in output) return { url: URL.createObjectURL(output.blob), size: output.blob.size }
+    return output
   } catch (error) {
     if (error instanceof CanceledError) throw error
     console.error('[Export Engine Hatası]', error)

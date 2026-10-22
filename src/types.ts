@@ -14,9 +14,13 @@ export interface ExportSettings {
   muteAudio: boolean
 }
 
+/** 'simple' keeps the editor to trimming and splitting; 'full' adds text and clipboard tools. */
+export type EditorProfile = 'simple' | 'full'
+
 export interface Preferences {
   theme: 'dark' | 'light'
   loopSelection: boolean
+  editorProfile: EditorProfile
 }
 
 export interface VideoSource {

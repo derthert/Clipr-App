@@ -29,6 +29,7 @@
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/core-mt": "^0.12.10",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",

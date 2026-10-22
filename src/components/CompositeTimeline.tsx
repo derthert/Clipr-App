@@ -188,6 +188,16 @@ export function CompositeTimeline({
     const textId = targetEl?.dataset.textId
     const t = timeAt(e.clientX, currentSpan)
 
+    // Shift+click jumps the playhead anywhere, even over a clip or text clip, without
+    // changing what is selected. Dragging further turns it into a range selection.
+    if (e.shiftKey) {
+      const at = clamp(t, 0, currentSpan)
+      dragRef.current = { kind: 'sel', anchor: at }
+      setActiveDragKind('sel')
+      onSeek(at)
+      return
+    }
+
     if (role === 'playhead' || role === 'ruler') {
       dragRef.current = { kind: 'scrub' }
       setActiveDragKind('scrub')
@@ -291,12 +301,6 @@ export function CompositeTimeline({
         }
         setActiveDragKind('move')
       }
-    } else if (e.shiftKey) {
-      onSelectClip(null)
-      onSelectText(null)
-      dragRef.current = { kind: 'sel', anchor: clamp(t, 0, currentSpan) }
-      setActiveDragKind('sel')
-      onSeek(clamp(t, 0, currentSpan))
     } else {
       // Clicked on empty timeline space -> clear selected clip & text, scrub playhead
       onSelectClip(null)
@@ -323,6 +327,8 @@ export function CompositeTimeline({
       const start = Math.min(drag.anchor, clampedT)
       const end = Math.max(drag.anchor, clampedT)
       if (end - start > 0.02) {
+        onSelectClip(null)
+        onSelectText(null)
         onSelectionChange({ start, end })
         onSeek(clampedT)
       }

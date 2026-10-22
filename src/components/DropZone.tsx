@@ -1,18 +1,27 @@
 // Empty state: the whole surface is a drop target for the first video(s).
 
 import { useState } from 'react'
+import type { EditorProfile } from '../types'
 import { isDesktop } from '../lib/desktop'
 import { isVideoFile } from '../lib/file'
+import { Segmented, type Option } from './controls'
 import { IconAlert, IconUpload } from './icons'
 
+const PROFILE_OPTIONS: Option<EditorProfile>[] = [
+  { value: 'simple', label: 'Simple' },
+  { value: 'full', label: 'Full' },
+]
+
 interface DropZoneProps {
+  profile: EditorProfile
+  onProfile: (profile: EditorProfile) => void
   onFiles: (files: File[]) => void
   onPick: () => void
   busy: boolean
   error: string | null
 }
 
-export function DropZone({ onFiles, onPick, busy, error }: DropZoneProps) {
+export function DropZone({ profile, onProfile, onFiles, onPick, busy, error }: DropZoneProps) {
   const [hovering, setHovering] = useState(false)
 
   return (
@@ -48,6 +57,18 @@ export function DropZone({ onFiles, onPick, busy, error }: DropZoneProps) {
           <li>Multiple videos</li>
           <li>Merge & export</li>
         </ul>
+        <div className="dropzone__profile">
+          <span className="dropzone__profile-label">Editor</span>
+          <Segmented
+            label="Editor profile"
+            value={profile}
+            options={PROFILE_OPTIONS}
+            onChange={onProfile}
+          />
+          <span className="dropzone__profile-hint">
+            {profile === 'simple' ? 'Split and trim only' : 'Text, cut, copy, paste'}
+          </span>
+        </div>
         {error ? (
           <p className="dropzone__error" role="alert">
             <IconAlert size={16} />

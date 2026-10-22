@@ -53,7 +53,7 @@ export function Header({
             Replace video
           </button>
         ) : null}
-        <button type="button" className="iconbutton" onClick={onSettings} title="Export settings">
+        <button type="button" className="iconbutton" onClick={onSettings} title="Settings">
           <IconSettings />
         </button>
         <button

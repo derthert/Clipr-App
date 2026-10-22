@@ -1,13 +1,24 @@
 // Set once, forget: the export options live behind the gear instead of on the main screen.
 
-import type { ExportFormat, ExportSettings, QualityPreset, ScalePreset, TrimMode } from '../types'
+import type {
+  EditorProfile,
+  ExportFormat,
+  ExportSettings,
+  QualityPreset,
+  ScalePreset,
+} from '../types'
 import { Field, Segmented, Toggle, type Option } from './controls'
 import { IconClose } from './icons'
 
-const MODES: Option<TrimMode>[] = [
-  { value: 'precise', label: 'Exact' },
-  { value: 'copy', label: 'Lossless' },
+const PROFILES: Option<EditorProfile>[] = [
+  { value: 'simple', label: 'Simple' },
+  { value: 'full', label: 'Full' },
 ]
+
+const PROFILE_HINTS: Record<EditorProfile, string> = {
+  simple: 'Split, trim and export. No text or clipboard tools.',
+  full: 'Everything: text clips, cut, copy and paste.',
+}
 
 const FORMATS: Option<ExportFormat>[] = [
   { value: 'mp4', label: 'MP4' },
@@ -28,30 +39,28 @@ const SIZES: Option<ScalePreset>[] = [
   { value: '480', label: '480p' },
 ]
 
-const MODE_HINTS: Record<TrimMode, string> = {
-  precise: 'Exactly the range you picked.',
-  copy: 'Instant, but the start snaps to the nearest keyframe.',
-}
-
 interface SettingsDialogProps {
+  profile: EditorProfile
+  onProfile: (profile: EditorProfile) => void
   settings: ExportSettings
   onChange: (patch: Partial<ExportSettings>) => void
   onReset: () => void
   onClose: () => void
-  sourceExtension: string
   command: string
 }
 
 export function SettingsDialog({
+  profile,
+  onProfile,
   settings,
   onChange,
   onReset,
   onClose,
-  sourceExtension,
   command,
 }: SettingsDialogProps) {
-  const encoding = settings.mode === 'precise'
-  const visual = encoding && settings.format !== 'mp3'
+  // Every export re-encodes for a frame-exact cut; Lossless (stream copy) was removed
+  // because it cannot handle multi-clip or text timelines.
+  const visual = settings.format !== 'mp3'
 
   return (
     <div className="overlay" onPointerDown={onClose}>
@@ -59,13 +68,18 @@ export function SettingsDialog({
         className="dialog dialog--settings"
         role="dialog"
         aria-modal="true"
-        aria-label="Export settings"
+        aria-label="Settings"
         onPointerDown={(event) => event.stopPropagation()}
       >
         <header className="dialog__head">
-          <h2>Export settings</h2>
+          <h2>Settings</h2>
           <div className="dialog__head-tools">
-            <button type="button" className="button button--ghost button--sm" onClick={onReset}>
+            <button
+              type="button"
+              className="button button--ghost button--sm"
+              onClick={onReset}
+              title="Reset the export settings"
+            >
               Reset
             </button>
             <button type="button" className="iconbutton" onClick={onClose} title="Close">
@@ -75,24 +89,17 @@ export function SettingsDialog({
         </header>
 
         <div className="dialog__body dialog__body--form">
-          <Field label="Cut" hint={MODE_HINTS[settings.mode]}>
-            <Segmented
-              label="Cut mode"
-              value={settings.mode}
-              options={MODES}
-              onChange={(mode) => onChange({ mode })}
-            />
+          <h3 className="dialog__section">Editor</h3>
+          <Field label="Profile" hint={PROFILE_HINTS[profile]}>
+            <Segmented label="Editor profile" value={profile} options={PROFILES} onChange={onProfile} />
           </Field>
 
-          <Field
-            label="Format"
-            hint={encoding ? undefined : `Keeps the original${sourceExtension ? ` .${sourceExtension}` : ' format'}`}
-          >
+          <h3 className="dialog__section">Export</h3>
+          <Field label="Format">
             <Segmented
               label="Format"
               value={settings.format}
               options={FORMATS}
-              disabled={!encoding}
               onChange={(format) => onChange({ format })}
             />
           </Field>
