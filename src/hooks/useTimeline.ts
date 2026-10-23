@@ -13,7 +13,10 @@ const METADATA_TIMEOUT = 15000
 const MIN_SEG = 0.04
 
 function createId(): string {
-  return crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  if (crypto.randomUUID) return crypto.randomUUID()
+  const arr = new Uint32Array(2)
+  crypto.getRandomValues(arr)
+  return `id-${Date.now()}-${arr[0].toString(16).padStart(8, '0')}${arr[1].toString(16).padStart(8, '0')}`
 }
 
 function probe(url: string): Promise<{ duration: number; width: number; height: number }> {
