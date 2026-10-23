@@ -30,9 +30,10 @@ export async function extractPeaks({ file, buckets, signal }: WaveformOptions): 
   let loudest = 0
 
   for (let bucket = 0; bucket < buckets; bucket += 1) {
+    const start = Math.floor(bucket * step)
     const end = Math.min(samples.length, Math.floor((bucket + 1) * step))
     let peak = 0
-    for (let index = Math.floor(bucket * step); index < end; index += 1) {
+    for (let index = start; index < end; index += 1) {
       const value = Math.abs(samples[index])
       if (value > peak) peak = value
     }
