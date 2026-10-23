@@ -314,7 +314,6 @@ async function createEngine(): Promise<FFmpeg> {
   })
 
   try {
-    console.log('[FFmpeg Init] 1/3: WASM ve Core Blob URL yolları hazırlanıyor...')
     const [classWorkerURL, coreBlobUrl, wasmBlobUrl, pthreadWorkerUrl] = await Promise.all([
       Promise.resolve(createWorkerBlobUrl()),
       resolveAssetBlobUrl('ffmpeg-core.js', 'text/javascript'),
@@ -323,12 +322,6 @@ async function createEngine(): Promise<FFmpeg> {
         ? resolveAssetBlobUrl('ffmpeg-core.worker.js', 'text/javascript')
         : Promise.resolve(undefined),
     ])
-
-    console.log('[FFmpeg Init] 2/3: ffmpeg.load() çağrılıyor...', {
-      classWorkerURL,
-      coreURL: coreBlobUrl,
-      wasmURL: wasmBlobUrl,
-    })
 
     await withTimeout(
       instance.load({
@@ -341,7 +334,6 @@ async function createEngine(): Promise<FFmpeg> {
       'FFmpeg motoru başlatılırken zaman aşımı oluştu (starting up timeout).',
     )
 
-    console.log('[FFmpeg Init] 3/3: FFmpeg WASM motoru başarıyla başlatıldı!')
     return instance
   } catch (error) {
     console.error('[FFmpeg Engine Load Error]', error)
