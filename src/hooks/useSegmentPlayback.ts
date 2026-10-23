@@ -51,13 +51,6 @@ export function useSegmentPlayback(
   optsRef.current = opts
   rateRef.current = rate
 
-  const sortedViewsMemo = useMemo(() => {
-    return [...views].sort((a, b) => a.timelineStart - b.timelineStart)
-  }, [views])
-
-  const sortedViewsRef = useRef(sortedViewsMemo)
-  sortedViewsRef.current = sortedViewsMemo
-
   const setGapState = useCallback((nextGap: boolean) => {
     isGapRef.current = nextGap
     setIsGap(nextGap)
