@@ -11,9 +11,10 @@ const PROGRESS_THROTTLE = 120
 
 function createId(): string {
   if (crypto.randomUUID) return crypto.randomUUID()
-  const arr = new Uint32Array(2)
-  crypto.getRandomValues(arr)
-  return `job-${Date.now()}-${arr[0].toString(16).padStart(8, '0')}${arr[1].toString(16).padStart(8, '0')}`
+  const array = new Uint32Array(4)
+  crypto.getRandomValues(array)
+  const randomStr = Array.from(array, (n) => n.toString(16).padStart(8, '0')).join('')
+  return `job-${Date.now()}-${randomStr}`
 }
 
 function messageOf(error: unknown): string {

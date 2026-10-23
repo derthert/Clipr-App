@@ -14,9 +14,10 @@ const MIN_SEG = 0.04
 
 function createId(): string {
   if (crypto.randomUUID) return crypto.randomUUID()
-  const arr = new Uint32Array(2)
-  crypto.getRandomValues(arr)
-  return `id-${Date.now()}-${arr[0].toString(16).padStart(8, '0')}${arr[1].toString(16).padStart(8, '0')}`
+  const array = new Uint32Array(4)
+  crypto.getRandomValues(array)
+  const randomStr = Array.from(array, (n) => n.toString(16).padStart(8, '0')).join('')
+  return `id-${Date.now()}-${randomStr}`
 }
 
 function probe(url: string): Promise<{ duration: number; width: number; height: number }> {
