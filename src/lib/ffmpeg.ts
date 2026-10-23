@@ -273,7 +273,6 @@ self.onmessage = async ({ data: { id, type, data: _data } }) => {
 async function resolveAssetBlobUrl(file: string, mimeType: string): Promise<string> {
   const localUrl = coreUrl(file)
   try {
-    console.log(`[FFmpeg Init] Yerel dosya yükleniyor: ${localUrl}`)
     const check = await fetch(localUrl, { method: 'HEAD' })
     if (!check.ok) throw new Error(`HTTP ${check.status}`)
     return await toBlobURL(localUrl, mimeType)
@@ -308,13 +307,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 async function createEngine(): Promise<FFmpeg> {
   const instance = new FFmpeg()
 
-  // Log all FFmpeg internal messages to browser console for debugging
-  instance.on('log', ({ type, message }) => {
-    console.log(`[FFmpeg Log] (${type})`, message)
-  })
-
   try {
-    console.log('[FFmpeg Init] 1/3: WASM ve Core Blob URL yolları hazırlanıyor...')
     const [classWorkerURL, coreBlobUrl, wasmBlobUrl, pthreadWorkerUrl] = await Promise.all([
       Promise.resolve(createWorkerBlobUrl()),
       resolveAssetBlobUrl('ffmpeg-core.js', 'text/javascript'),
@@ -323,12 +316,6 @@ async function createEngine(): Promise<FFmpeg> {
         ? resolveAssetBlobUrl('ffmpeg-core.worker.js', 'text/javascript')
         : Promise.resolve(undefined),
     ])
-
-    console.log('[FFmpeg Init] 2/3: ffmpeg.load() çağrılıyor...', {
-      classWorkerURL,
-      coreURL: coreBlobUrl,
-      wasmURL: wasmBlobUrl,
-    })
 
     await withTimeout(
       instance.load({
@@ -341,7 +328,6 @@ async function createEngine(): Promise<FFmpeg> {
       'FFmpeg motoru başlatılırken zaman aşımı oluştu (starting up timeout).',
     )
 
-    console.log('[FFmpeg Init] 3/3: FFmpeg WASM motoru başarıyla başlatıldı!')
     return instance
   } catch (error) {
     console.error('[FFmpeg Engine Load Error]', error)
@@ -708,7 +694,7 @@ async function releaseEngine(
   if (engine !== instance) return
   await withTimeout(
     (async () => {
-      for (const f of files) await instance.deleteFile(f).catch(() => undefined)
+      await Promise.all(files.map((f) => instance.deleteFile(f).catch(() => undefined)))
       await unmount?.()
     })(),
     2000,

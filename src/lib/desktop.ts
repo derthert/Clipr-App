@@ -1,8 +1,20 @@
 // Typed view of the bridge the Electron shell injects. Undefined in a plain browser.
 
+import type { ExportSettings } from '../types'
+import type { X264Preset } from './settings'
+
+export interface CommandInputPayload {
+  start: number
+  end: number
+  settings: ExportSettings
+  sourceHeight?: number
+  preset: X264Preset
+}
+
 export interface DesktopRunRequest {
   id: string
-  args: string[]
+  commandInput?: CommandInputPayload
+  args?: string[] // Kept for backwards compatibility or if not used can be removed, but engine currently passes args in workspace exec so better to not break other stuff.
   sourcePath: string
   fileName: string
   duration: number

@@ -10,7 +10,11 @@ export type JobDraft = Omit<ExportJob, 'id' | 'status' | 'progress'>
 const PROGRESS_THROTTLE = 120
 
 function createId(): string {
-  return crypto.randomUUID?.() ?? `job-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  if (crypto.randomUUID) return crypto.randomUUID()
+  const array = new Uint32Array(4)
+  crypto.getRandomValues(array)
+  const randomStr = Array.from(array, (n) => n.toString(16).padStart(8, '0')).join('')
+  return `job-${Date.now()}-${randomStr}`
 }
 
 function messageOf(error: unknown): string {

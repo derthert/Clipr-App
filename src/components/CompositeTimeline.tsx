@@ -37,18 +37,22 @@ type DragState =
       segId: string
       edge: 'start' | 'end'
       initView: SegmentView
+      others: SegmentView[]
       maxDur: number
       grabTime: number
       historySaved: boolean
+      snapTargets: number[]
     }
   | {
       kind: 'move'
       segId: string
       initView: SegmentView
+      others: SegmentView[]
       grabOffset: number
       initClientX: number
       moved: boolean
       historySaved: boolean
+      snapTargets: number[]
     }
   | {
       kind: 'trim-text'
@@ -64,6 +68,7 @@ type DragState =
       grabOffset: number
       initClientX: number
       moved: boolean
+      snapTargets: number[]
     }
 
 interface CompositeTimelineProps {
@@ -245,6 +250,14 @@ export function CompositeTimeline({
           grabOffset: t - seg.timelineStart,
           initClientX: e.clientX,
           moved: false,
+          snapTargets: [
+            0,
+            time,
+            ...views.flatMap((v) => [v.timelineStart, v.timelineStart + v.timelineDuration]),
+            ...textSegments
+              .filter((ts) => ts.id !== textId)
+              .flatMap((ts) => [ts.timelineStart, ts.timelineStart + ts.duration]),
+          ]
         }
         setActiveDragKind('move-text')
       }
@@ -255,14 +268,26 @@ export function CompositeTimeline({
       onSelectText(null)
       onSelectionChange(null)
       if (v && src) {
+        const others = views
+          .filter((view) => view.id !== segId)
+          .sort((a, b) => a.timelineStart - b.timelineStart)
+
         dragRef.current = {
           kind: 'trim',
           segId,
           edge: 'start',
           initView: v,
+          others,
           maxDur: src.duration,
           grabTime: t,
           historySaved: false,
+          snapTargets: [
+            0,
+            time,
+            ...views
+              .filter((o) => o.id !== segId)
+              .flatMap((o) => [o.timelineStart, o.timelineStart + o.timelineDuration]),
+          ]
         }
         setActiveDragKind('trim')
       }
@@ -273,14 +298,26 @@ export function CompositeTimeline({
       onSelectText(null)
       onSelectionChange(null)
       if (v && src) {
+        const others = views
+          .filter((view) => view.id !== segId)
+          .sort((a, b) => a.timelineStart - b.timelineStart)
+
         dragRef.current = {
           kind: 'trim',
           segId,
           edge: 'end',
           initView: v,
+          others,
           maxDur: src.duration,
           grabTime: t,
           historySaved: false,
+          snapTargets: [
+            0,
+            time,
+            ...views
+              .filter((o) => o.id !== segId)
+              .flatMap((o) => [o.timelineStart, o.timelineStart + o.timelineDuration]),
+          ]
         }
         setActiveDragKind('trim')
       }
@@ -290,14 +327,26 @@ export function CompositeTimeline({
       onSelectText(null)
       onSelectionChange(null)
       if (view) {
+        const others = views
+          .filter((v) => v.id !== segId)
+          .sort((a, b) => a.timelineStart - b.timelineStart)
+
         dragRef.current = {
           kind: 'move',
           segId,
           initView: view,
+          others,
           grabOffset: t - view.timelineStart,
           initClientX: e.clientX,
           moved: false,
           historySaved: false,
+          snapTargets: [
+            0,
+            time,
+            ...views
+              .filter((o) => o.id !== segId)
+              .flatMap((o) => [o.timelineStart, o.timelineStart + o.timelineDuration]),
+          ]
         }
         setActiveDragKind('move')
       }
@@ -354,14 +403,7 @@ export function CompositeTimeline({
         let nextStart = clamp(t - drag.grabOffset, 0, maxStart)
         let activeSnap: number | null = null
 
-        const snapTargets = [
-          0,
-          time,
-          ...views.flatMap((v) => [v.timelineStart, v.timelineStart + v.timelineDuration]),
-          ...textSegments
-            .filter((ts) => ts.id !== drag.textId)
-            .flatMap((ts) => [ts.timelineStart, ts.timelineStart + ts.duration]),
-        ]
+        const snapTargets = drag.snapTargets
 
         let bestDist = snapThreshold
         for (const target of snapTargets) {
@@ -388,18 +430,10 @@ export function CompositeTimeline({
         onSaveHistory?.()
         drag.historySaved = true
       }
-      const { segId, edge, initView, maxDur, grabTime } = drag
+      const { segId, edge, initView, others, maxDur, grabTime } = drag
       const delta = t - grabTime
-      const others = views
-        .filter((v) => v.id !== segId)
-        .sort((a, b) => a.timelineStart - b.timelineStart)
 
-      // Collect snap targets: timeline 0, playhead, and other clips' edges
-      const snapTargets = [
-        0,
-        time,
-        ...others.flatMap((o) => [o.timelineStart, o.timelineStart + o.timelineDuration]),
-      ]
+      const snapTargets = drag.snapTargets
 
       if (edge === 'start') {
         // Prevent overlapping previous clip
@@ -475,10 +509,7 @@ export function CompositeTimeline({
         const dur = drag.initView.timelineDuration
         const maxTrackStart = Math.max(0, displaySpan - dur)
         const rawStart = clamp(t - drag.grabOffset, 0, maxTrackStart)
-
-        const others = views
-          .filter((v) => v.id !== drag.segId)
-          .sort((a, b) => a.timelineStart - b.timelineStart)
+        const others = drag.others
 
         // Build non-overlapping valid start intervals [min, max]
         const validIntervals: Array<{ min: number; max: number }> = []
@@ -508,12 +539,7 @@ export function CompositeTimeline({
         const isStartValid = (s: number) =>
           validIntervals.some((iv) => s >= iv.min - 1e-5 && s <= iv.max + 1e-5)
 
-        // Snap targets: timeline 0, playhead time, and other clips' start & end edges
-        const snapTargets = [
-          0,
-          time,
-          ...others.flatMap((o) => [o.timelineStart, o.timelineStart + o.timelineDuration]),
-        ]
+        const snapTargets = drag.snapTargets
 
         let bestSnapDist = snapThreshold
         let snappedStart = resolvedStart

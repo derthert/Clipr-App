@@ -5,7 +5,6 @@
 import type { CompositionPiece, ExportSettings, TextSegment } from '../types'
 import { desktop } from './desktop'
 import { cancelRender as cancelWasm, renderClip as renderPipeline } from './ffmpeg'
-import { buildFfmpegArgs } from './settings'
 
 export interface ClipRequest {
   id: string
@@ -53,15 +52,13 @@ export async function renderClip(request: ClipRequest): Promise<ClipResult> {
       const result = await desktop.run(
         {
           id: request.id,
-          args: buildFfmpegArgs({
-            input: '@INPUT@',
-            output: '@OUTPUT@',
+          commandInput: {
             start: request.start,
             end: request.end,
             settings: effectiveSettings,
             sourceHeight: request.sourceHeight,
             preset: 'veryfast',
-          }),
+          },
           sourcePath: request.sourcePath,
           fileName: request.fileName,
           duration: request.end - request.start,
