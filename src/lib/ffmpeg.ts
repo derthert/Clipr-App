@@ -273,7 +273,6 @@ self.onmessage = async ({ data: { id, type, data: _data } }) => {
 async function resolveAssetBlobUrl(file: string, mimeType: string): Promise<string> {
   const localUrl = coreUrl(file)
   try {
-    console.log(`[FFmpeg Init] Yerel dosya yükleniyor: ${localUrl}`)
     const check = await fetch(localUrl, { method: 'HEAD' })
     if (!check.ok) throw new Error(`HTTP ${check.status}`)
     return await toBlobURL(localUrl, mimeType)
@@ -309,7 +308,6 @@ async function createEngine(): Promise<FFmpeg> {
   const instance = new FFmpeg()
 
   try {
-    console.log('[FFmpeg Init] 1/3: WASM ve Core Blob URL yolları hazırlanıyor...')
     const [classWorkerURL, coreBlobUrl, wasmBlobUrl, pthreadWorkerUrl] = await Promise.all([
       Promise.resolve(createWorkerBlobUrl()),
       resolveAssetBlobUrl('ffmpeg-core.js', 'text/javascript'),
@@ -330,7 +328,6 @@ async function createEngine(): Promise<FFmpeg> {
       'FFmpeg motoru başlatılırken zaman aşımı oluştu (starting up timeout).',
     )
 
-    console.log('[FFmpeg Init] 3/3: FFmpeg WASM motoru başarıyla başlatıldı!')
     return instance
   } catch (error) {
     console.error('[FFmpeg Engine Load Error]', error)
