@@ -697,7 +697,7 @@ async function releaseEngine(
   if (engine !== instance) return
   await withTimeout(
     (async () => {
-      for (const f of files) await instance.deleteFile(f).catch(() => undefined)
+      await Promise.all(files.map((f) => instance.deleteFile(f).catch(() => undefined)))
       await unmount?.()
     })(),
     2000,
