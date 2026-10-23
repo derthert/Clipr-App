@@ -324,12 +324,6 @@ async function createEngine(): Promise<FFmpeg> {
         : Promise.resolve(undefined),
     ])
 
-    console.log('[FFmpeg Init] 2/3: ffmpeg.load() çağrılıyor...', {
-      classWorkerURL,
-      coreURL: coreBlobUrl,
-      wasmURL: wasmBlobUrl,
-    })
-
     await withTimeout(
       instance.load({
         classWorkerURL,
