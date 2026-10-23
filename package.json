@@ -14,6 +14,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
+    "test": "vitest run",
     "desktop": "vite build && node scripts/desktop.mjs",
     "desktop:dev": "node scripts/desktop.mjs --dev",
     "desktop:pack": "vite build && electron-builder --win",
