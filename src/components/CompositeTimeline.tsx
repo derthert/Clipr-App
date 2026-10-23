@@ -37,6 +37,7 @@ type DragState =
       segId: string
       edge: 'start' | 'end'
       initView: SegmentView
+      others: SegmentView[]
       maxDur: number
       grabTime: number
       historySaved: boolean
@@ -45,6 +46,7 @@ type DragState =
       kind: 'move'
       segId: string
       initView: SegmentView
+      others: SegmentView[]
       grabOffset: number
       initClientX: number
       moved: boolean
@@ -255,11 +257,16 @@ export function CompositeTimeline({
       onSelectText(null)
       onSelectionChange(null)
       if (v && src) {
+        const others = views
+          .filter((view) => view.id !== segId)
+          .sort((a, b) => a.timelineStart - b.timelineStart)
+
         dragRef.current = {
           kind: 'trim',
           segId,
           edge: 'start',
           initView: v,
+          others,
           maxDur: src.duration,
           grabTime: t,
           historySaved: false,
@@ -273,11 +280,16 @@ export function CompositeTimeline({
       onSelectText(null)
       onSelectionChange(null)
       if (v && src) {
+        const others = views
+          .filter((view) => view.id !== segId)
+          .sort((a, b) => a.timelineStart - b.timelineStart)
+
         dragRef.current = {
           kind: 'trim',
           segId,
           edge: 'end',
           initView: v,
+          others,
           maxDur: src.duration,
           grabTime: t,
           historySaved: false,
@@ -290,10 +302,15 @@ export function CompositeTimeline({
       onSelectText(null)
       onSelectionChange(null)
       if (view) {
+        const others = views
+          .filter((v) => v.id !== segId)
+          .sort((a, b) => a.timelineStart - b.timelineStart)
+
         dragRef.current = {
           kind: 'move',
           segId,
           initView: view,
+          others,
           grabOffset: t - view.timelineStart,
           initClientX: e.clientX,
           moved: false,
@@ -388,11 +405,8 @@ export function CompositeTimeline({
         onSaveHistory?.()
         drag.historySaved = true
       }
-      const { segId, edge, initView, maxDur, grabTime } = drag
+      const { segId, edge, initView, others, maxDur, grabTime } = drag
       const delta = t - grabTime
-      const others = views
-        .filter((v) => v.id !== segId)
-        .sort((a, b) => a.timelineStart - b.timelineStart)
 
       // Collect snap targets: timeline 0, playhead, and other clips' edges
       const snapTargets = [
@@ -475,10 +489,7 @@ export function CompositeTimeline({
         const dur = drag.initView.timelineDuration
         const maxTrackStart = Math.max(0, displaySpan - dur)
         const rawStart = clamp(t - drag.grabOffset, 0, maxTrackStart)
-
-        const others = views
-          .filter((v) => v.id !== drag.segId)
-          .sort((a, b) => a.timelineStart - b.timelineStart)
+        const others = drag.others
 
         // Build non-overlapping valid start intervals [min, max]
         const validIntervals: Array<{ min: number; max: number }> = []
