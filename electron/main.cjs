@@ -88,6 +88,23 @@ function failureFrom(output) {
   return lines[lines.length - 1]?.slice(0, 200) || 'ffmpeg could not produce this clip'
 }
 
+const ALLOWED_WORKSPACE_FLAGS = new Set([
+  '-ac', '-af', '-an', '-ar', '-b:a', '-bsf:a', '-c', '-c:a', '-c:v',
+  '-crf', '-f', '-fflags', '-filter_complex', '-filter_complex_threads',
+  '-filter_threads', '-hide_banner', '-i', '-loop', '-map', '-movflags',
+  '-pix_fmt', '-preset', '-r', '-safe', '-shortest', '-ss', '-t',
+  '-threads', '-vf', '-vn', '-y', '-nostdin', '-progress', '-nostats'
+])
+
+function isSafeWorkspaceArg(arg) {
+  if (typeof arg !== 'string') return false
+  if (arg.startsWith('-')) return ALLOWED_WORKSPACE_FLAGS.has(arg)
+  if (arg.includes('..')) return false
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(arg)) return false
+  if (path.posix.isAbsolute(arg) || path.win32.isAbsolute(arg)) return false
+  return true
+}
+
 const SCALE_HEIGHTS = { '1080': 1080, '720': 720, '480': 480 }
 
 function buildFfmpegArgs({ input, output, start, end, settings, sourceHeight, preset }) {
@@ -276,16 +293,12 @@ ipcMain.handle('clipr:workspace-delete', (_event, id, name) => {
 })
 
 ipcMain.handle('clipr:workspace-exec', (event, id, args) => {
+  if (!Array.isArray(args) || !args.every(isSafeWorkspaceArg)) {
+    return { code: -1, error: 'Invalid or unauthorized ffmpeg arguments provided' }
+  }
+
   const cwd = workspaces.get(id)
   if (!cwd) return { code: -1, error: 'Unknown export workspace' }
-
-  // Security check: Make sure no argument tries to escape the workspace directory.
-  // The workspace uses bare names for files within it.
-  for (const arg of args) {
-    if (path.isAbsolute(arg) || arg.includes('..')) {
-      return { code: -1, error: 'Invalid argument: directory traversal or absolute path detected' }
-    }
-  }
 
   return new Promise((resolve) => {
     let child
