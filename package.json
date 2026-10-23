@@ -13,6 +13,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
+    "test": "vitest run",
     "desktop": "vite build && node scripts/desktop.mjs",
     "desktop:dev": "node scripts/desktop.mjs --dev",
     "desktop:pack": "vite build && electron-builder --win",
@@ -41,7 +42,8 @@
     "globals": "^15.14.0",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.19.0",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vitest": "^5.0.5"
   },
   "build": {
     "appId": "app.clipr.desktop",
