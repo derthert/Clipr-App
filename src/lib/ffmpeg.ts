@@ -273,7 +273,6 @@ self.onmessage = async ({ data: { id, type, data: _data } }) => {
 async function resolveAssetBlobUrl(file: string, mimeType: string): Promise<string> {
   const localUrl = coreUrl(file)
   try {
-    console.log(`[FFmpeg Init] Yerel dosya yükleniyor: ${localUrl}`)
     const check = await fetch(localUrl, { method: 'HEAD' })
     if (!check.ok) throw new Error(`HTTP ${check.status}`)
     return await toBlobURL(localUrl, mimeType)
