@@ -88,14 +88,93 @@ function failureFrom(output) {
   return lines[lines.length - 1]?.slice(0, 200) || 'ffmpeg could not produce this clip'
 }
 
+const SCALE_HEIGHTS = { '1080': 1080, '720': 720, '480': 480 }
+
+function buildFfmpegArgs({ input, output, start, end, settings, sourceHeight, preset }) {
+  const duration = Math.max(0.05, end - start)
+  const args = ['-hide_banner', '-ss', start.toFixed(3), '-i', input, '-t', duration.toFixed(3)]
+
+  const wantsAudio = !settings.muteAudio && settings.format !== 'gif'
+  const filters = []
+
+  if (settings.format === 'gif') filters.push('fps=12')
+
+  const maxTarget = settings.scale === 'source' ? undefined : SCALE_HEIGHTS[settings.scale]
+  if (maxTarget === undefined) {
+    filters.push('scale=trunc(iw/2)*2:trunc(ih/2)*2')
+  } else {
+    const height = sourceHeight ? Math.min(sourceHeight, maxTarget) : maxTarget
+    const evenHeight = Math.max(2, Math.round(height / 2) * 2)
+    const scaleFlags = preset === 'veryfast' ? 'bicubic' : 'fast_bilinear'
+    filters.push(`scale=-2:${evenHeight}:flags=${scaleFlags}`)
+  }
+
+  if (settings.format === 'mp3') {
+    args.push('-vn', '-c:a', 'libmp3lame', '-b:a', '128k', output)
+    return args
+  }
+
+  if (settings.format === 'gif') {
+    const prepared = [...filters, 'split[sample][frames]'].join(',')
+    const chain = [
+      prepared,
+      '[sample]palettegen=stats_mode=diff[palette]',
+      '[frames][palette]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle',
+    ].join(';')
+    args.push('-vf', chain, '-an', '-loop', '0', output)
+    return args
+  }
+
+  const QUALITY_CRF = {
+    veryfast: { high: '20', balanced: '23', small: '28' },
+    ultrafast: { high: '24', balanced: '28', small: '30' },
+  }
+
+  args.push('-map', '0:v:0?')
+  if (wantsAudio) args.push('-map', '0:a:0?')
+  if (filters.length) args.push('-vf', filters.join(','))
+
+  // Note: we let ffmpeg use its default thread count by omitting -threads,
+  // since the desktop app has full access to resources and the multi-thread
+  // constraints are only for the WASM build.
+  args.push(
+    '-c:v', 'libx264',
+    '-preset', preset,
+    '-crf', QUALITY_CRF[preset][settings.quality],
+    '-pix_fmt', 'yuv420p',
+    '-movflags', '+faststart'
+  )
+
+  if (wantsAudio) args.push('-c:a', 'aac', '-b:a', '128k')
+  else args.push('-an')
+
+  args.push(output)
+  return args
+}
+
 ipcMain.handle('clipr:run', async (event, request) => {
   const directory = writableDirectory(request.sourcePath)
   const output = uniquePath(directory, request.fileName)
-  const args = ['-y', '-nostdin', '-progress', 'pipe:2', '-nostats', ...request.args].map((arg) =>
-    arg === '@INPUT@' ? request.sourcePath : arg === '@OUTPUT@' ? output : arg,
-  )
 
   return new Promise((resolve) => {
+    let rawArgs = []
+    if (request.commandInput) {
+      const { start, end, settings, sourceHeight, preset } = request.commandInput
+      rawArgs = buildFfmpegArgs({
+        input: request.sourcePath,
+        output,
+        start,
+        end,
+        settings,
+        sourceHeight,
+        preset
+      })
+    } else {
+      resolve({ ok: false, error: 'Invalid command input' })
+      return
+    }
+
+    const args = ['-y', '-nostdin', '-progress', 'pipe:2', '-nostats', ...rawArgs]
     let child
     try {
       child = spawn(FFMPEG, args, { windowsHide: true })
@@ -199,6 +278,14 @@ ipcMain.handle('clipr:workspace-delete', (_event, id, name) => {
 ipcMain.handle('clipr:workspace-exec', (event, id, args) => {
   const cwd = workspaces.get(id)
   if (!cwd) return { code: -1, error: 'Unknown export workspace' }
+
+  // Security check: Make sure no argument tries to escape the workspace directory.
+  // The workspace uses bare names for files within it.
+  for (const arg of args) {
+    if (path.isAbsolute(arg) || arg.includes('..')) {
+      return { code: -1, error: 'Invalid argument: directory traversal or absolute path detected' }
+    }
+  }
 
   return new Promise((resolve) => {
     let child
