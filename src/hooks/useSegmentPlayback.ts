@@ -3,7 +3,7 @@
 // crosses a segment boundary. Gaps between segments play continuously as a
 // black screen (blank frame) rather than being skipped.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SegmentView, VideoSource } from '../types'
 
 interface PlaybackOpts {
@@ -45,6 +45,13 @@ export function useSegmentPlayback(
   optsRef.current = opts
   rateRef.current = rate
 
+  const sortedViewsMemo = useMemo(() => {
+    return [...views].sort((a, b) => a.timelineStart - b.timelineStart)
+  }, [views])
+
+  const sortedViewsRef = useRef(sortedViewsMemo)
+  sortedViewsRef.current = sortedViewsMemo
+
   const setGapState = useCallback((nextGap: boolean) => {
     isGapRef.current = nextGap
     setIsGap(nextGap)
@@ -65,7 +72,7 @@ export function useSegmentPlayback(
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
   function getSortedViews(): SegmentView[] {
-    return [...viewsRef.current].sort((a, b) => a.timelineStart - b.timelineStart)
+    return sortedViewsRef.current
   }
 
   /**
