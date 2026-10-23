@@ -308,11 +308,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 async function createEngine(): Promise<FFmpeg> {
   const instance = new FFmpeg()
 
-  // Log all FFmpeg internal messages to browser console for debugging
-  instance.on('log', ({ type, message }) => {
-    console.log(`[FFmpeg Log] (${type})`, message)
-  })
-
   try {
     console.log('[FFmpeg Init] 1/3: WASM ve Core Blob URL yolları hazırlanıyor...')
     const [classWorkerURL, coreBlobUrl, wasmBlobUrl, pthreadWorkerUrl] = await Promise.all([
