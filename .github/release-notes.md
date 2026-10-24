@@ -1,3 +1,10 @@
+## What's new in 0.3.1
+
+- **Timeline zoom**: hold Ctrl and scroll (or pinch) to zoom in around the cursor, or use
+  the zoom bar above the timeline and the + / - / 0 keys. Scroll to pan while zoomed; the
+  view follows the playhead as it plays.
+- **Tidier Simple / Full switch** in Settings and on the start screen.
+
 ## What's new in 0.3.0
 
 - **Timeline editor**: put several videos on one timeline, trim, split, move, cut, copy
