@@ -223,15 +223,20 @@
 }
 
 .dropzone__profile {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.dropzone__profile-row {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
   gap: 10px;
-  width: 100%;
-  margin-top: 8px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+}
+
+.dropzone__profile .segmented__item {
+  padding-inline: 16px;
 }
 
 .dropzone__profile-label {
@@ -243,10 +248,8 @@
 }
 
 .dropzone__profile-hint {
-  min-width: 20ch;
   color: var(--text-faint);
   font-size: 12px;
-  text-align: left;
 }
 
 .dropzone__error {
@@ -1234,6 +1237,38 @@
   cursor: not-allowed;
 }
 
+/* A label on the left and a compact control on the right, like the toggles */
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.setting-row__text {
+  display: flex;
+  flex-direction: column;
+}
+
+.setting-row__label {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.setting-row__hint {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.setting-row .segmented {
+  flex: none;
+}
+
+.setting-row .segmented__item {
+  padding-inline: 14px;
+}
+
 .toggle {
   display: flex;
   align-items: center;
@@ -1539,6 +1574,42 @@
   background: var(--surface-2);
   color: var(--text-faint);
   font-size: 13px;
+}
+
+/* Zoom bar above the tracks */
+
+.ctimeline__zoom {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.ctimeline__zoom-hint {
+  margin-right: auto;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.ctimeline__zoom-slider {
+  width: 140px;
+  accent-color: var(--accent);
+}
+
+/* The tracks and ruler sit on a canvas that is zoom x the viewport width and scrolls inside it */
+
+.ctimeline__viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.ctimeline__canvas {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 100%;
 }
 
 .ctimeline__tracks {

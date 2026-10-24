@@ -163,6 +163,12 @@ export const IconPlus = (props: { size?: number }) => (
   </Icon>
 )
 
+export const IconMinus = (props: { size?: number }) => (
+  <Icon {...props}>
+    <path d="M5 12h14" />
+  </Icon>
+)
+
 export const IconUpload = (props: { size?: number }) => (
   <Icon {...props}>
     <path d="M12 16V4" />

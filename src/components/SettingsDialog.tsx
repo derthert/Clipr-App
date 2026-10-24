@@ -90,9 +90,13 @@ export function SettingsDialog({
 
         <div className="dialog__body dialog__body--form">
           <h3 className="dialog__section">Editor</h3>
-          <Field label="Profile" hint={PROFILE_HINTS[profile]}>
+          <div className="setting-row">
+            <span className="setting-row__text">
+              <span className="setting-row__label">Profile</span>
+              <span className="setting-row__hint">{PROFILE_HINTS[profile]}</span>
+            </span>
             <Segmented label="Editor profile" value={profile} options={PROFILES} onChange={onProfile} />
-          </Field>
+          </div>
 
           <h3 className="dialog__section">Export</h3>
           <Field label="Format">
