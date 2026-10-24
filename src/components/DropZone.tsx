@@ -58,13 +58,15 @@ export function DropZone({ profile, onProfile, onFiles, onPick, busy, error }: D
           <li>Merge & export</li>
         </ul>
         <div className="dropzone__profile">
-          <span className="dropzone__profile-label">Editor</span>
-          <Segmented
-            label="Editor profile"
-            value={profile}
-            options={PROFILE_OPTIONS}
-            onChange={onProfile}
-          />
+          <div className="dropzone__profile-row">
+            <span className="dropzone__profile-label">Editor</span>
+            <Segmented
+              label="Editor profile"
+              value={profile}
+              options={PROFILE_OPTIONS}
+              onChange={onProfile}
+            />
+          </div>
           <span className="dropzone__profile-hint">
             {profile === 'simple' ? 'Split and trim only' : 'Text, cut, copy, paste'}
           </span>

@@ -33,6 +33,8 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Shift + drag', 'Select a range'],
       ['Drag a clip', 'Move it'],
       ['Drag a clip edge', 'Trim it'],
+      ['Ctrl / ⌘ + scroll', 'Zoom the timeline around the cursor'],
+      ['+ / − · 0', 'Zoom in or out · show the whole timeline'],
       ['?', 'Open this list'],
     ],
   },

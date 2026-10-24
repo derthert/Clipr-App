@@ -1,9 +1,12 @@
 // The unified timeline: supports an independent Text Track layer above the Video Track,
 // playhead scrubbing, clip & text selection, non-scaling segment trimming (left/right handles),
 // dragging a clip from its middle to change its timeline start position,
-// and magnetic edge/playhead snapping with overlap prevention.
+// and magnetic edge/playhead snapping with overlap prevention. It zooms (Ctrl + wheel, the
+// zoom bar, or +/-) by widening the tracks inside a horizontally scrolling viewport.
 
 import {
+  useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,10 +14,19 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import type { SegmentView, Selection, TextSegment, VideoSource } from '../types'
+import { useHotkeys } from '../hooks/useHotkeys'
 import { clamp, formatTimecode } from '../lib/time'
+import { IconMinus, IconPlus } from './icons'
 
 const MIN_SEG_DUR = 0.04
 const SNAP_THRESHOLD_PX = 12
+
+const MIN_ZOOM = 1
+const ZOOM_STEP = 1.5
+// Deepest zoom: this many pixels per second of video.
+const MAX_PX_PER_SECOND = 400
+// Dragging this close to the viewport edge scrolls the timeline along.
+const EDGE_SCROLL_PX = 32
 
 // One color per distinct source video
 const PALETTE = [
@@ -28,7 +40,7 @@ const PALETTE = [
   '#a78bfa', // violet
 ]
 
-const TICK_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800]
+const TICK_STEPS = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800]
 type DragState =
   | { kind: 'scrub' }
   | { kind: 'sel'; anchor: number }
@@ -123,12 +135,17 @@ export function CompositeTimeline({
   onSaveHistory,
 }: CompositeTimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
   const [hovering, setHovering] = useState<number | null>(null)
   const [activeDragKind, setActiveDragKind] = useState<DragState['kind'] | null>(null)
   const [snapLineTime, setSnapLineTime] = useState<number | null>(null)
   const [lockedSpan, setLockedSpan] = useState<number | null>(null)
+  const [zoom, setZoom] = useState(MIN_ZOOM)
+  const [viewportWidth, setViewportWidth] = useState(0)
+  // Time and on-screen offset that must stay put across the next zoom change.
+  const zoomAnchorRef = useRef<{ time: number; offsetX: number } | null>(null)
 
   const sourcesDuration = useMemo(
     () => Array.from(sources.values()).reduce((sum, src) => sum + src.duration, 0),
@@ -152,13 +169,105 @@ export function CompositeTimeline({
   const pct = (t: number): string =>
     `${clamp(displaySpan > 0 ? (t / displaySpan) * 100 : 0, 0, 100)}%`
 
+  const maxZoom =
+    viewportWidth > 0 && displaySpan > 0
+      ? Math.max(MIN_ZOOM, (displaySpan * MAX_PX_PER_SECOND) / viewportWidth)
+      : MIN_ZOOM
+
+  // About ten labels across the visible part, whatever the zoom.
+  const tickStep = useMemo(() => {
+    const visibleSpan = displaySpan / zoom
+    return TICK_STEPS.find((s) => visibleSpan / s <= 10) ?? 3600
+  }, [displaySpan, zoom])
+
   const ticks = useMemo(() => {
     if (displaySpan === 0) return []
-    const step = TICK_STEPS.find((s) => displaySpan / s <= 10) ?? 3600
     const result: number[] = []
-    for (let v = 0; v <= displaySpan - step * 0.4; v += step) result.push(v)
+    for (let i = 0; i * tickStep <= displaySpan - tickStep * 0.4; i++) result.push(i * tickStep)
     return result
-  }, [displaySpan])
+  }, [displaySpan, tickStep])
+
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const observer = new ResizeObserver(() => setViewportWidth(viewport.clientWidth))
+    observer.observe(viewport)
+    return () => observer.disconnect()
+  }, [])
+
+  /** Zooms while keeping the time under `anchorClientX` (default: the playhead) in place. */
+  const zoomTo = (next: number, anchorClientX?: number) => {
+    const viewport = viewportRef.current
+    const target = clamp(next, MIN_ZOOM, maxZoom)
+    if (target === zoom) return
+    if (viewport && displaySpan > 0) {
+      const rect = viewport.getBoundingClientRect()
+      const playheadX = (time / displaySpan) * viewport.scrollWidth - viewport.scrollLeft
+      const offsetX = clamp(
+        anchorClientX !== undefined ? anchorClientX - rect.left : playheadX,
+        0,
+        rect.width,
+      )
+      zoomAnchorRef.current = {
+        time: ((viewport.scrollLeft + offsetX) / viewport.scrollWidth) * displaySpan,
+        offsetX,
+      }
+    }
+    setZoom(target)
+  }
+
+  useLayoutEffect(() => {
+    const anchor = zoomAnchorRef.current
+    const viewport = viewportRef.current
+    zoomAnchorRef.current = null
+    if (!anchor || !viewport || displaySpan === 0) return
+    viewport.scrollLeft = (anchor.time / displaySpan) * viewport.scrollWidth - anchor.offsetX
+  }, [zoom, displaySpan])
+
+  // Wheel: Ctrl/Cmd + wheel (and trackpad pinch) zooms around the cursor; a plain vertical
+  // wheel pans sideways once zoomed in. Needs a non-passive listener to stop page zoom.
+  const zoomToRef = useRef(zoomTo)
+  zoomToRef.current = zoomTo
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault()
+        zoomToRef.current(zoomRef.current * Math.exp(-event.deltaY * 0.0025), event.clientX)
+      } else if (zoomRef.current > MIN_ZOOM && Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+        event.preventDefault()
+        viewport.scrollLeft += event.deltaY
+      }
+    }
+    viewport.addEventListener('wheel', onWheel, { passive: false })
+    return () => viewport.removeEventListener('wheel', onWheel)
+  }, [])
+
+  // Keep the playhead on screen while it moves (playback, arrow keys). Only reacts to
+  // `time`, so scrolling away by hand while paused is left alone.
+  const spanRef = useRef(displaySpan)
+  spanRef.current = displaySpan
+  useEffect(() => {
+    const viewport = viewportRef.current
+    const span = spanRef.current
+    if (!viewport || zoomRef.current <= MIN_ZOOM || dragRef.current || span === 0) return
+    const x = (time / span) * viewport.scrollWidth
+    const margin = viewport.clientWidth * 0.05
+    if (x < viewport.scrollLeft + margin || x > viewport.scrollLeft + viewport.clientWidth - margin) {
+      viewport.scrollLeft = x - viewport.clientWidth * 0.2
+    }
+  }, [time])
+
+  useHotkeys({
+    '=': () => zoomTo(zoom * ZOOM_STEP),
+    '+': () => zoomTo(zoom * ZOOM_STEP),
+    'shift++': () => zoomTo(zoom * ZOOM_STEP),
+    '-': () => zoomTo(zoom / ZOOM_STEP),
+    '0': () => zoomTo(MIN_ZOOM),
+  })
 
   const timeAt = (clientX: number, spanOverride?: number): number => {
     const rect = trackRef.current?.getBoundingClientRect()
@@ -177,6 +286,9 @@ export function CompositeTimeline({
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return
+    // The zoom bar and the viewport's own scrollbar are not part of the timeline surface.
+    if (e.target === viewportRef.current) return
+    if ((e.target as HTMLElement).closest('.ctimeline__zoom')) return
     containerRef.current?.setPointerCapture(e.pointerId)
 
     const currentSpan = displaySpan
@@ -313,6 +425,15 @@ export function CompositeTimeline({
   }
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const viewport = viewportRef.current
+    if (dragRef.current && viewport && zoom > MIN_ZOOM) {
+      const rect = viewport.getBoundingClientRect()
+      if (e.clientX < rect.left + EDGE_SCROLL_PX) {
+        viewport.scrollLeft -= rect.left + EDGE_SCROLL_PX - e.clientX
+      } else if (e.clientX > rect.right - EDGE_SCROLL_PX) {
+        viewport.scrollLeft += e.clientX - (rect.right - EDGE_SCROLL_PX)
+      }
+    }
     const t = timeAt(e.clientX)
     setHovering(t)
     const drag = dragRef.current
@@ -578,155 +699,201 @@ export function CompositeTimeline({
       onPointerCancel={endDrag}
       onPointerLeave={() => setHovering(null)}
     >
-      <div className="ctimeline__tracks">
-        {/* ── Independent Text Track Layer (above Video Track) ── */}
-        {showTextTrack && (
-          <div className="ctimeline__track ctimeline__track--text" aria-label="Text track">
-            <span className="ctimeline__track-badge">T · Text Track</span>
-            {textSegments.map((tSeg) => {
-              const isSelected = tSeg.id === selectedTextId
-              return (
-                <div
-                  key={tSeg.id}
-                  className={`ctimeline__text-seg${isSelected ? ' ctimeline__text-seg--selected' : ''}`}
-                  style={{
-                    left: pct(tSeg.timelineStart),
-                    width: pct(tSeg.duration),
-                  }}
-                  data-role="text-segment"
-                  data-text-id={tSeg.id}
-                  data-selected={isSelected ? 'true' : undefined}
-                >
-                  <span className="ctimeline__text-seg-label">T · {tSeg.text || 'Text'}</span>
-                  <span
-                    className="ctimeline__trim ctimeline__trim--start"
-                    data-role="trim-text-start"
-                    data-text-id={tSeg.id}
-                    title="Trim text start"
-                  />
-                  <span
-                    className="ctimeline__trim ctimeline__trim--end"
-                    data-role="trim-text-end"
-                    data-text-id={tSeg.id}
-                    title="Trim text end"
-                  />
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {/* ── Video Track ── */}
-        <div className="ctimeline__track" ref={trackRef}>
-          {/* ── Segments ── */}
-          {views.map((view) => {
-            const idx = sourceIndex(view.sourceId, sources)
-            const color = PALETTE[idx % PALETTE.length]
-            const src = sources.get(view.sourceId)
-            const srcDur = src?.duration || view.timelineDuration || 1
-            const segDur = Math.max(0.001, view.timelineDuration)
-            const filmstripWidthPct = (srcDur / segDur) * 100
-            const filmstripLeftPct = -(view.sourceStart / segDur) * 100
-            const isSelected = view.id === selectedClipId
-
-            return (
-              <div
-                key={view.id}
-                className={`ctimeline__segment${isSelected ? ' ctimeline__segment--selected' : ''}`}
-                style={
-                  {
-                    '--c': color,
-                    left: pct(view.timelineStart),
-                    width: pct(view.timelineDuration),
-                  } as CSSProperties
-                }
-                data-role="segment"
-                data-seg-id={view.id}
-                data-selected={isSelected ? 'true' : undefined}
-              >
-                <div
-                  className="ctimeline__filmstrip"
-                  aria-hidden="true"
-                  style={{
-                    width: `${filmstripWidthPct}%`,
-                    left: `${filmstripLeftPct}%`,
-                  }}
-                >
-                  {(src?.filmstrip ?? []).map((frame, index) => (
-                    <span key={`${view.id}-${index}`} style={{ backgroundImage: `url(${frame})` }} />
-                  ))}
-                </div>
-                <span className="ctimeline__seg-label">{src?.name ?? '—'}</span>
-                {/* Trim handles */}
-                <span
-                  className="ctimeline__trim ctimeline__trim--start"
-                  data-role="trim-start"
-                  data-seg-id={view.id}
-                  title="Trim start"
-                />
-                <span
-                  className="ctimeline__trim ctimeline__trim--end"
-                  data-role="trim-end"
-                  data-seg-id={view.id}
-                  title="Trim end"
-                />
-              </div>
-            )
-          })}
-
-          {/* ── Selection ── */}
-          {selection && selection.end - selection.start > 0.01 && (
-            <>
-              <div className="ctimeline__shade" style={{ left: 0, width: pct(selection.start) }} />
-              <div
-                className="ctimeline__shade"
-                style={{ left: pct(selection.end), right: 0, width: 'auto' }}
-              />
-              <div
-                className="ctimeline__sel-bar"
-                style={{ left: pct(selection.start), width: pct(selection.end - selection.start) }}
-              >
-                <span className="ctimeline__sel-label">
-                  {formatTimecode(selection.end - selection.start, false)}
-                </span>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* ── Magnetic Snap Guide Line (spans across all tracks) ── */}
-        {snapLineTime !== null && (
-          <div className="ctimeline__snap-line" style={{ left: pct(snapLineTime) }} />
-        )}
-
-        {/* ── Playhead (spans across all tracks) ── */}
-        <div
-          className="ctimeline__playhead"
-          style={{ left: pct(time) }}
-          data-role="playhead"
-          role="slider"
-          aria-label="Playhead"
-          aria-valuemin={0}
-          aria-valuemax={Number(totalDuration.toFixed(2))}
-          aria-valuenow={Number(time.toFixed(2))}
-          aria-valuetext={formatTimecode(time)}
+      <div className="ctimeline__zoom">
+        <span className="ctimeline__zoom-hint">Ctrl + scroll to zoom</span>
+        <button
+          type="button"
+          className="iconbutton iconbutton--sm"
+          onClick={() => zoomTo(zoom / ZOOM_STEP)}
+          disabled={zoom <= MIN_ZOOM}
+          title="Zoom out (-)"
+        >
+          <IconMinus size={14} />
+        </button>
+        <input
+          type="range"
+          className="ctimeline__zoom-slider"
+          min={0}
+          max={1000}
+          step={1}
+          value={maxZoom > MIN_ZOOM ? Math.round((Math.log(zoom) / Math.log(maxZoom)) * 1000) : 0}
+          onChange={(e) => zoomTo(Math.exp((Number(e.target.value) / 1000) * Math.log(maxZoom)))}
+          disabled={maxZoom <= MIN_ZOOM}
+          aria-label="Timeline zoom"
         />
-
-        {/* ── Hover tooltip ── */}
-        {hovering !== null && !dragRef.current && (
-          <div className="ctimeline__hover" style={{ left: pct(hovering) }}>
-            <span>{formatTimecode(hovering, false)}</span>
-          </div>
-        )}
+        <button
+          type="button"
+          className="iconbutton iconbutton--sm"
+          onClick={() => zoomTo(zoom * ZOOM_STEP)}
+          disabled={zoom >= maxZoom}
+          title="Zoom in (+)"
+        >
+          <IconPlus size={14} />
+        </button>
+        <button
+          type="button"
+          className="button button--ghost button--sm"
+          onClick={() => zoomTo(MIN_ZOOM)}
+          disabled={zoom <= MIN_ZOOM}
+          title="Show the whole timeline (0)"
+        >
+          Fit
+        </button>
       </div>
 
-      {/* ── Ruler ── */}
-      <div className="ctimeline__ruler" data-role="ruler" aria-hidden="true">
-        {ticks.map((tick) => (
-          <span key={tick} className="ctimeline__tick" style={{ left: pct(tick) }}>
-            {formatTimecode(tick, false)}
-          </span>
-        ))}
+      <div className="ctimeline__viewport" ref={viewportRef}>
+        <div className="ctimeline__canvas" style={{ width: `${zoom * 100}%` }}>
+          <div className="ctimeline__tracks">
+            {/* ── Independent Text Track Layer (above Video Track) ── */}
+            {showTextTrack && (
+              <div className="ctimeline__track ctimeline__track--text" aria-label="Text track">
+                <span className="ctimeline__track-badge">T · Text Track</span>
+                {textSegments.map((tSeg) => {
+                  const isSelected = tSeg.id === selectedTextId
+                  return (
+                    <div
+                      key={tSeg.id}
+                      className={`ctimeline__text-seg${isSelected ? ' ctimeline__text-seg--selected' : ''}`}
+                      style={{
+                        left: pct(tSeg.timelineStart),
+                        width: pct(tSeg.duration),
+                      }}
+                      data-role="text-segment"
+                      data-text-id={tSeg.id}
+                      data-selected={isSelected ? 'true' : undefined}
+                    >
+                      <span className="ctimeline__text-seg-label">T · {tSeg.text || 'Text'}</span>
+                      <span
+                        className="ctimeline__trim ctimeline__trim--start"
+                        data-role="trim-text-start"
+                        data-text-id={tSeg.id}
+                        title="Trim text start"
+                      />
+                      <span
+                        className="ctimeline__trim ctimeline__trim--end"
+                        data-role="trim-text-end"
+                        data-text-id={tSeg.id}
+                        title="Trim text end"
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* ── Video Track ── */}
+            <div className="ctimeline__track" ref={trackRef}>
+              {/* ── Segments ── */}
+              {views.map((view) => {
+                const idx = sourceIndex(view.sourceId, sources)
+                const color = PALETTE[idx % PALETTE.length]
+                const src = sources.get(view.sourceId)
+                const srcDur = src?.duration || view.timelineDuration || 1
+                const segDur = Math.max(0.001, view.timelineDuration)
+                const filmstripWidthPct = (srcDur / segDur) * 100
+                const filmstripLeftPct = -(view.sourceStart / segDur) * 100
+                const isSelected = view.id === selectedClipId
+
+                return (
+                  <div
+                    key={view.id}
+                    className={`ctimeline__segment${isSelected ? ' ctimeline__segment--selected' : ''}`}
+                    style={
+                      {
+                        '--c': color,
+                        left: pct(view.timelineStart),
+                        width: pct(view.timelineDuration),
+                      } as CSSProperties
+                    }
+                    data-role="segment"
+                    data-seg-id={view.id}
+                    data-selected={isSelected ? 'true' : undefined}
+                  >
+                    <div
+                      className="ctimeline__filmstrip"
+                      aria-hidden="true"
+                      style={{
+                        width: `${filmstripWidthPct}%`,
+                        left: `${filmstripLeftPct}%`,
+                      }}
+                    >
+                      {(src?.filmstrip ?? []).map((frame, index) => (
+                        <span key={`${view.id}-${index}`} style={{ backgroundImage: `url(${frame})` }} />
+                      ))}
+                    </div>
+                    <span className="ctimeline__seg-label">{src?.name ?? '—'}</span>
+                    {/* Trim handles */}
+                    <span
+                      className="ctimeline__trim ctimeline__trim--start"
+                      data-role="trim-start"
+                      data-seg-id={view.id}
+                      title="Trim start"
+                    />
+                    <span
+                      className="ctimeline__trim ctimeline__trim--end"
+                      data-role="trim-end"
+                      data-seg-id={view.id}
+                      title="Trim end"
+                    />
+                  </div>
+                )
+              })}
+
+              {/* ── Selection ── */}
+              {selection && selection.end - selection.start > 0.01 && (
+                <>
+                  <div className="ctimeline__shade" style={{ left: 0, width: pct(selection.start) }} />
+                  <div
+                    className="ctimeline__shade"
+                    style={{ left: pct(selection.end), right: 0, width: 'auto' }}
+                  />
+                  <div
+                    className="ctimeline__sel-bar"
+                    style={{ left: pct(selection.start), width: pct(selection.end - selection.start) }}
+                  >
+                    <span className="ctimeline__sel-label">
+                      {formatTimecode(selection.end - selection.start, false)}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* ── Magnetic Snap Guide Line (spans across all tracks) ── */}
+            {snapLineTime !== null && (
+              <div className="ctimeline__snap-line" style={{ left: pct(snapLineTime) }} />
+            )}
+
+            {/* ── Playhead (spans across all tracks) ── */}
+            <div
+              className="ctimeline__playhead"
+              style={{ left: pct(time) }}
+              data-role="playhead"
+              role="slider"
+              aria-label="Playhead"
+              aria-valuemin={0}
+              aria-valuemax={Number(totalDuration.toFixed(2))}
+              aria-valuenow={Number(time.toFixed(2))}
+              aria-valuetext={formatTimecode(time)}
+            />
+
+            {/* ── Hover tooltip ── */}
+            {hovering !== null && !dragRef.current && (
+              <div className="ctimeline__hover" style={{ left: pct(hovering) }}>
+                <span>{formatTimecode(hovering, false)}</span>
+              </div>
+            )}
+          </div>
+
+          {/* ── Ruler ── */}
+          <div className="ctimeline__ruler" data-role="ruler" aria-hidden="true">
+            {ticks.map((tick) => (
+              <span key={tick} className="ctimeline__tick" style={{ left: pct(tick) }}>
+                {formatTimecode(tick, tickStep < 1)}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   )
