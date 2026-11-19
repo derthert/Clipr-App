@@ -28,7 +28,7 @@ export const DEFAULT_SETTINGS: ExportSettings = {
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: 'dark',
-  loopSelection: true,
+  loopPlayback: false,
   editorProfile: 'full',
 }
 

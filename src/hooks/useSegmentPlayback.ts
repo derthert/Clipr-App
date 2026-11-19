@@ -7,9 +7,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SegmentView, VideoSource } from '../types'
 
 interface PlaybackOpts {
-  loopSelection?: boolean
-  selStart?: number
-  selEnd?: number
+  /** Restart from 0 at the end of the timeline instead of stopping. */
+  loop?: boolean
 }
 
 const EPS = 0.005
@@ -265,23 +264,11 @@ export function useSegmentPlayback(
     lastFrameTimeRef.current = now
 
     const td = computeTotalDuration()
-    const { loopSelection, selStart, selEnd } = optsRef.current
+    const { loop } = optsRef.current
 
     // ── 1. Currently playing inside a GAP (black screen) ──
     if (isGapRef.current || !activeViewIdRef.current) {
       const nextTL = timeRef.current + dt
-
-      // Selection loop check
-      if (
-        loopSelection &&
-        selStart !== undefined &&
-        selEnd !== undefined &&
-        selEnd > selStart &&
-        nextTL >= selEnd
-      ) {
-        seek(selStart)
-        return
-      }
 
       // Check if we reached or entered a segment
       const enteredSeg = findActiveSegmentAt(nextTL, false)
@@ -299,6 +286,10 @@ export function useSegmentPlayback(
 
       // Check if we reached the end of the timeline
       if (nextTL >= td) {
+        if (loop) {
+          seek(0)
+          return
+        }
         pause()
         timeRef.current = td
         setTime(td)
@@ -324,18 +315,6 @@ export function useSegmentPlayback(
     const srcCurrent = video.currentTime
     const newTL = view.timelineStart + (srcCurrent - view.sourceStart)
 
-    // Selection loop check
-    if (
-      loopSelection &&
-      selStart !== undefined &&
-      selEnd !== undefined &&
-      selEnd > selStart &&
-      newTL >= selEnd
-    ) {
-      seek(selStart)
-      return
-    }
-
     // Segment end boundary reached
     if (srcCurrent >= view.sourceEnd - 0.025 || video.ended) {
       const segEnd = view.timelineStart + view.timelineDuration
@@ -343,6 +322,10 @@ export function useSegmentPlayback(
 
       if (!upcoming) {
         // End of the last segment on the timeline
+        if (loop) {
+          seek(0)
+          return
+        }
         pause()
         setGapState(false)
         if (Math.abs(video.currentTime - view.sourceEnd) > 0.01) {

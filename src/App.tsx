@@ -3,7 +3,7 @@
 // cut/copy/paste segments, and export everything concatenated.
 
 import { useEffect, useRef, useState } from 'react'
-import type { CompositionPiece, ExportSettings, Preferences, Selection, VideoSource } from './types'
+import type { CompositionPiece, ExportSettings, Preferences, VideoSource } from './types'
 import { APP_NAME, REPO_URL } from './config'
 import { CompositeTimeline } from './components/CompositeTimeline'
 import { DropZone } from './components/DropZone'
@@ -26,8 +26,6 @@ import { ensureEngine, previewCommand } from './lib/ffmpeg'
 import { VIDEO_ACCEPT } from './lib/file'
 import { DEFAULT_PREFERENCES, DEFAULT_SETTINGS, MIN_CLIP_DURATION, buildFileName, outputExtension } from './lib/settings'
 
-const MIN_SEL = 0.04
-
 export default function App() {
   // ── Core state ────────────────────────────────────────────────────────────
   const tl = useTimeline()
@@ -36,15 +34,12 @@ export default function App() {
   const queue = useExportQueue()
   const engine = useEngineStatus()
 
-  const [selection, setSelection] = useState<Selection | null>(null)
   const [dialog, setDialog] = useState<'none' | 'shortcuts' | 'settings'>('none')
   const fileInput = useRef<HTMLInputElement>(null)
 
   // ── Segment-aware playback ────────────────────────────────────────────────
   const playback = useSegmentPlayback(tl.views, tl.sources, {
-    loopSelection: preferences.value.loopSelection,
-    selStart: selection?.start,
-    selEnd: selection?.end,
+    loop: preferences.value.loopPlayback,
   })
 
   // ── Side effects ─────────────────────────────────────────────────────────
@@ -67,7 +62,6 @@ export default function App() {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const pickFile = () => fileInput.current?.click()
-  const hasSel = Boolean(selection && selection.end - selection.start >= MIN_SEL)
   const hasVideos = tl.views.length > 0 || tl.sources.size > 0
   const selectedClip = tl.views.find((v) => v.id === tl.selectedClipId) ?? null
   const selectedText = tl.textSegments.find((t) => t.id === tl.selectedTextId) ?? null
@@ -82,20 +76,11 @@ export default function App() {
   const splitAtPlayhead = () => tl.splitAt(playback.time)
 
   const handleCut = () => {
-    if (tl.selectedClipId) {
-      tl.cutClip(tl.selectedClipId)
-    } else if (hasSel && selection) {
-      tl.cutRange(selection.start, selection.end)
-      setSelection(null)
-    }
+    if (tl.selectedClipId) tl.cutClip(tl.selectedClipId)
   }
 
   const handleCopy = () => {
-    if (tl.selectedClipId) {
-      tl.copyClip(tl.selectedClipId)
-    } else if (hasSel && selection) {
-      tl.copyRange(selection.start, selection.end)
-    }
+    if (tl.selectedClipId) tl.copyClip(tl.selectedClipId)
   }
 
   const handlePaste = () => {
@@ -107,16 +92,12 @@ export default function App() {
       tl.removeTextSegment(tl.selectedTextId)
     } else if (tl.selectedClipId) {
       tl.deleteClip(tl.selectedClipId)
-    } else if (hasSel && selection) {
-      tl.deleteRange(selection.start, selection.end)
-      setSelection(null)
     }
   }
 
   const handleClearSelection = () => {
     tl.setSelectedClipId(null)
     tl.setSelectedTextId(null)
-    setSelection(null)
   }
 
   // ── Export ────────────────────────────────────────────────────────────────
@@ -198,7 +179,7 @@ export default function App() {
       space: playback.toggle,
       s: splitAtPlayhead,
       'm': playback.toggleMuted,
-      'l': () => preferences.patch({ loopSelection: !preferences.value.loopSelection }),
+      'l': () => preferences.patch({ loopPlayback: !preferences.value.loopPlayback }),
       'mod+z': tl.undo,
       'mod+shift+z': tl.redo,
       'mod+y': tl.redo,
@@ -222,11 +203,11 @@ export default function App() {
   useHotkeys(
     {
       escape: () => {
-        if (tl.selectedClipId || tl.selectedTextId || selection) handleClearSelection()
+        if (tl.selectedClipId || tl.selectedTextId) handleClearSelection()
         else setDialog('none')
       },
     },
-    dialog !== 'none' || Boolean(selection) || Boolean(tl.selectedClipId) || Boolean(tl.selectedTextId),
+    dialog !== 'none' || Boolean(tl.selectedClipId) || Boolean(tl.selectedTextId),
   )
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -335,8 +316,7 @@ export default function App() {
               rate={playback.rate}
               muted={playback.muted}
               volume={playback.volume}
-              loop={preferences.value.loopSelection}
-              selection={selection ?? { start: 0, end: playback.totalDuration }}
+              loop={preferences.value.loopPlayback}
               onToggle={playback.toggle}
               onSeek={playback.seek}
               onSelectText={tl.setSelectedTextId}
@@ -344,7 +324,7 @@ export default function App() {
               onRate={playback.changeRate}
               onToggleMuted={playback.toggleMuted}
               onToggleLoop={() =>
-                preferences.patch({ loopSelection: !preferences.value.loopSelection })
+                preferences.patch({ loopPlayback: !preferences.value.loopPlayback })
               }
               onVolume={playback.changeVolume}
             />
@@ -358,12 +338,10 @@ export default function App() {
               time={playback.time}
               selectedClipId={tl.selectedClipId}
               selectedTextId={tl.selectedTextId}
-              selection={selection}
               onSeek={playback.seek}
               onSelectClip={tl.setSelectedClipId}
               onSelectText={tl.setSelectedTextId}
               onUpdateText={tl.updateTextSegment}
-              onSelectionChange={setSelection}
               onTrimSegment={tl.trimSegment}
               onMoveSegment={tl.moveSegmentTo}
               onSaveHistory={tl.saveHistory}
@@ -375,8 +353,7 @@ export default function App() {
               time={playback.time}
               totalDuration={tl.totalDuration}
               selectedClip={selectedClip}
-              selection={selection}
-              hasClipboard={Boolean(tl.copiedClip || tl.clipboard?.length)}
+              hasClipboard={Boolean(tl.copiedClip)}
               canExportAll={tl.totalDuration >= MIN_CLIP_DURATION}
               onSplit={splitAtPlayhead}
               onCut={handleCut}
@@ -428,8 +405,8 @@ export default function App() {
           onReset={settings.reset}
           onClose={() => setDialog('none')}
           command={previewCommand({
-            start: selection?.start ?? 0,
-            end: selection?.end ?? playback.totalDuration,
+            start: 0,
+            end: playback.totalDuration,
             settings: settings.value,
             extension: outputExtension(settings.value),
             sourceHeight: firstSource?.height,

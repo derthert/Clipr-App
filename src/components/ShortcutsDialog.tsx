@@ -8,7 +8,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
     items: [
       ['Space', 'Play or pause'],
       ['← / →', 'Nudge 0.1s · Shift 1s · Alt one frame'],
-      ['L', 'Loop the selection'],
+      ['L', 'Loop playback'],
       ['M', 'Mute'],
     ],
   },
@@ -18,11 +18,11 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Ctrl / ⌘ + Z', 'Undo'],
       ['Ctrl / ⌘ + Shift + Z', 'Redo'],
       ['S', 'Split at playhead'],
-      ['Ctrl / ⌘ + X', 'Cut clip or range'],
-      ['Ctrl / ⌘ + C', 'Copy clip or range'],
+      ['Ctrl / ⌘ + X', 'Cut the selected clip'],
+      ['Ctrl / ⌘ + C', 'Copy the selected clip'],
       ['Ctrl / ⌘ + V', 'Paste at playhead'],
-      ['Delete / Backspace', 'Delete clip or range'],
-      ['Esc', 'Clear the selection'],
+      ['Delete / Backspace', 'Delete the selected clip'],
+      ['Esc', 'Deselect'],
     ],
   },
   {
@@ -30,7 +30,6 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
     items: [
       ['Click empty space', 'Move the playhead'],
       ['Shift + click', 'Move the playhead, even over a clip'],
-      ['Shift + drag', 'Select a range'],
       ['Drag a clip', 'Move it'],
       ['Drag a clip edge', 'Trim it'],
       ['Ctrl / ⌘ + scroll', 'Zoom the timeline around the cursor'],

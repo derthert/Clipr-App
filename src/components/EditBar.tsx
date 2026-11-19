@@ -1,6 +1,6 @@
 // Edit toolbar: split, cut, copy, paste, delete + timecodes + export buttons.
 
-import type { SegmentView, Selection } from '../types'
+import type { SegmentView } from '../types'
 import { formatTimecode, formatDuration } from '../lib/time'
 import {
   IconScissors,
@@ -12,7 +12,6 @@ interface EditBarProps {
   time: number
   totalDuration: number
   selectedClip: SegmentView | null
-  selection: Selection | null
   hasClipboard: boolean
   canExportAll: boolean
   onSplit: () => void
@@ -109,7 +108,6 @@ export function EditBar({
   time,
   totalDuration,
   selectedClip,
-  selection,
   hasClipboard,
   canExportAll,
   onSplit,
@@ -122,13 +120,10 @@ export function EditBar({
   onAddVideos,
   showClipboard,
 }: EditBarProps) {
-  const hasRangeSel = Boolean(selection && selection.end - selection.start > 0.04)
-  const canEditClipOrSel = Boolean(selectedClip) || hasRangeSel
+  const canEditClipOrSel = Boolean(selectedClip)
   const activeRange = selectedClip
     ? { start: selectedClip.timelineStart, end: selectedClip.timelineStart + selectedClip.timelineDuration }
-    : hasRangeSel && selection
-      ? selection
-      : null
+    : null
 
   return (
     <section className="editbar">

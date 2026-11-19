@@ -1,7 +1,7 @@
 // Preview surface: the video plus a compact transport row and draggable text overlay canvas.
 
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import type { Selection, TextSegment } from '../types'
+import type { TextSegment } from '../types'
 import { clamp, formatTimecode } from '../lib/time'
 import { PREVIEW_REF_HEIGHT } from '../lib/settings'
 import {
@@ -30,7 +30,6 @@ interface PlayerProps {
   muted: boolean
   volume: number
   loop: boolean
-  selection: Selection
   onToggle: () => void
   onSeek: (time: number) => void
   onSelectText?: (id: string | null) => void
@@ -75,7 +74,6 @@ export function Player({
   muted,
   volume,
   loop,
-  selection,
   onToggle,
   onSeek,
   onSelectText,
@@ -326,8 +324,8 @@ export function Player({
           <button
             type="button"
             className="iconbutton"
-            title="Go to in point"
-            onClick={() => onSeek(selection.start)}
+            title="Go to the start"
+            onClick={() => onSeek(0)}
           >
             <IconSkipStart />
           </button>
@@ -342,8 +340,8 @@ export function Player({
           <button
             type="button"
             className="iconbutton"
-            title="Go to out point"
-            onClick={() => onSeek(selection.end)}
+            title="Go to the end"
+            onClick={() => onSeek(duration)}
           >
             <IconSkipEnd />
           </button>
@@ -359,7 +357,7 @@ export function Player({
             type="button"
             className="iconbutton"
             data-active={loop}
-            title="Loop selection (L)"
+            title="Loop playback (L)"
             onClick={onToggleLoop}
           >
             <IconLoop />

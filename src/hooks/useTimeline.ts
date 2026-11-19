@@ -80,48 +80,6 @@ export function computeViews(segments: Segment[]): SegmentView[] {
   })
 }
 
-/**
- * Slice a segment list by a [rangeStart, rangeEnd] window on the unified timeline.
- * `before` keeps its timeline positions, `after` is shifted left by the range length
- * (ripple), and `inside` holds the removed pieces. Every piece carries an explicit
- * `timelineOffset`, so nothing falls back to the "right after the previous segment" layout.
- */
-function sliceByRange(
-  views: SegmentView[],
-  rangeStart: number,
-  rangeEnd: number,
-): { before: Segment[]; inside: Segment[]; after: Segment[] } {
-  const before: Segment[] = []
-  const inside: Segment[] = []
-  const after: Segment[] = []
-  const shift = rangeEnd - rangeStart
-
-  for (const v of views) {
-    const segEnd = v.timelineStart + v.timelineDuration
-    if (segEnd <= rangeStart) { before.push(bare(v)); continue }
-    if (v.timelineStart >= rangeEnd) {
-      after.push(piece(v, v.sourceStart, v.sourceEnd, v.timelineStart - shift, v.id))
-      continue
-    }
-
-    // Overlapping segment: split into up to 3 pieces
-    if (v.timelineStart < rangeStart) {
-      const end = v.sourceStart + (rangeStart - v.timelineStart)
-      if (end - v.sourceStart >= MIN_SEG) before.push(piece(v, v.sourceStart, end, v.timelineStart))
-    }
-    const inStart = v.sourceStart + Math.max(0, rangeStart - v.timelineStart)
-    const inEnd = v.sourceStart + Math.min(v.timelineDuration, rangeEnd - v.timelineStart)
-    if (inEnd - inStart >= MIN_SEG)
-      inside.push(piece(v, inStart, inEnd, Math.max(v.timelineStart, rangeStart)))
-    if (segEnd > rangeEnd) {
-      const start = v.sourceStart + (rangeEnd - v.timelineStart)
-      if (v.sourceEnd - start >= MIN_SEG) after.push(piece(v, start, v.sourceEnd, rangeStart))
-    }
-  }
-
-  return { before, inside, after }
-}
-
 function piece(
   v: SegmentView,
   sourceStart: number,
@@ -159,7 +117,6 @@ export function useTimeline() {
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null)
   const [copiedClip, setCopiedClip] = useState<Segment | null>(null)
-  const [clipboard, setClipboard] = useState<Segment[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const urlsRef = useRef<Map<string, string>>(new Map())
@@ -343,7 +300,7 @@ export function useTimeline() {
     })
   }, [setSegmentsWithHistory])
 
-  /** Copy a single selected clip into `copiedClip` / `clipboard`. */
+  /** Copy a single selected clip into `copiedClip`. */
   const copyClip = useCallback((segId: string) => {
     setSegments((prev) => {
       const target = prev.find((s) => s.id === segId)
@@ -354,7 +311,6 @@ export function useTimeline() {
           trimEnd: target.trimEnd ?? target.sourceEnd,
         }
         setCopiedClip(snapshot)
-        setClipboard([snapshot])
       }
       return prev
     })
@@ -371,7 +327,6 @@ export function useTimeline() {
         trimEnd: target.trimEnd ?? target.sourceEnd,
       }
       setCopiedClip(snapshot)
-      setClipboard([snapshot])
       return prev.filter((s) => s.id !== segId)
     })
     setSelectedClipId((curr) => (curr === segId ? null : curr))
@@ -383,45 +338,14 @@ export function useTimeline() {
     setSelectedClipId((curr) => (curr === segId ? null : curr))
   }, [setSegmentsWithHistory])
 
-  /** Delete a timeline range (ripple-deletes). */
-  const deleteRange = useCallback((start: number, end: number) => {
-    setSegmentsWithHistory((prev) => {
-      const vs = computeViews(prev)
-      const { before, after } = sliceByRange(vs, start, end)
-      return [...before, ...after]
-    })
-  }, [setSegmentsWithHistory])
-
-  /** Copy a range to the internal clipboard. */
-  const copyRange = useCallback((start: number, end: number) => {
-    setSegments((prev) => {
-      const vs = computeViews(prev)
-      const { inside } = sliceByRange(vs, start, end)
-      setClipboard(inside)
-      if (inside.length > 0) setCopiedClip(inside[0])
-      return prev // copy doesn't mutate segments, no history push needed
-    })
-  }, [setSegments])
-
-  /** Cut a range (copy + ripple-delete). */
-  const cutRange = useCallback((start: number, end: number) => {
-    setSegmentsWithHistory((prev) => {
-      const vs = computeViews(prev)
-      const { before, inside, after } = sliceByRange(vs, start, end)
-      setClipboard(inside)
-      if (inside.length > 0) setCopiedClip(inside[0])
-      return [...before, ...after]
-    })
-  }, [setSegmentsWithHistory])
-
   /**
-   * Paste `copiedClip` (or `clipboard`) directly at `atTime` (the Playhead's currentTime).
+   * Paste `copiedClip` directly at `atTime` (the Playhead's currentTime).
    * If `atTime` falls inside an existing clip, splits that clip and inserts/ripples
    * subsequent clips forward so no clips overlap.
    */
   const pasteAt = useCallback((atTime: number) => {
-    const itemsToPaste = copiedClip ? [copiedClip] : clipboard
-    if (!itemsToPaste?.length) return
+    if (!copiedClip) return
+    const itemsToPaste = [copiedClip]
 
     const pasteStart = Math.max(0, atTime)
     let cursor = pasteStart
@@ -500,7 +424,7 @@ export function useTimeline() {
     if (pastedSegs[0]) {
       setSelectedClipId(pastedSegs[0].id)
     }
-  }, [copiedClip, clipboard, setSegmentsWithHistory])
+  }, [copiedClip, setSegmentsWithHistory])
 
   /**
    * Trim a segment's in/out point (trimStart / trimEnd).
@@ -623,7 +547,6 @@ export function useTimeline() {
     selectedTextId,
     setSelectedTextId,
     copiedClip,
-    clipboard,
     error,
     busy,
     addFiles,
@@ -631,9 +554,6 @@ export function useTimeline() {
     copyClip,
     cutClip,
     deleteClip,
-    deleteRange,
-    copyRange,
-    cutRange,
     pasteAt,
     trimSegment,
     removeSegment,

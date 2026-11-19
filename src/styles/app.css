@@ -1844,42 +1844,6 @@
   background: color-mix(in srgb, var(--c) 45%, transparent);
 }
 
-/* ── Selection overlay ── */
-
-.ctimeline__shade {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  background: color-mix(in srgb, var(--bg) 65%, transparent);
-  pointer-events: none;
-  z-index: 3;
-}
-
-.ctimeline__sel-bar {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  border: 2px solid var(--accent);
-  border-radius: 5px;
-  pointer-events: none;
-  z-index: 4;
-  display: flex;
-  align-items: flex-end;
-  padding-bottom: 5px;
-  justify-content: center;
-}
-
-.ctimeline__sel-label {
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
 /* ── Magnetic Snap Guide Line ── */
 
 .ctimeline__snap-line {

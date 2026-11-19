@@ -13,7 +13,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import type { SegmentView, Selection, TextSegment, VideoSource } from '../types'
+import type { SegmentView, TextSegment, VideoSource } from '../types'
 import { useHotkeys } from '../hooks/useHotkeys'
 import { clamp, formatTimecode } from '../lib/time'
 import { IconMinus, IconPlus } from './icons'
@@ -43,7 +43,6 @@ const PALETTE = [
 const TICK_STEPS = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800]
 type DragState =
   | { kind: 'scrub' }
-  | { kind: 'sel'; anchor: number }
   | {
       kind: 'trim'
       segId: string
@@ -87,11 +86,9 @@ interface CompositeTimelineProps {
   time: number
   selectedClipId: string | null
   selectedTextId: string | null
-  selection: Selection | null
   onSeek: (t: number) => void
   onSelectClip: (segId: string | null) => void
   onSelectText: (textId: string | null) => void
-  onSelectionChange: (sel: Selection | null) => void
   onTrimSegment: (
     segId: string,
     edge: 'start' | 'end',
@@ -124,11 +121,9 @@ export function CompositeTimeline({
   time,
   selectedClipId,
   selectedTextId,
-  selection,
   onSeek,
   onSelectClip,
   onSelectText,
-  onSelectionChange,
   onTrimSegment,
   onMoveSegment,
   onUpdateText,
@@ -300,13 +295,12 @@ export function CompositeTimeline({
     const textId = targetEl?.dataset.textId
     const t = timeAt(e.clientX, currentSpan)
 
-    // Shift+click jumps the playhead anywhere, even over a clip or text clip, without
-    // changing what is selected. Dragging further turns it into a range selection.
+    // Shift+click moves the playhead anywhere, even over a clip or text clip, without
+    // changing what is selected; keep dragging to scrub.
     if (e.shiftKey) {
-      const at = clamp(t, 0, currentSpan)
-      dragRef.current = { kind: 'sel', anchor: at }
-      setActiveDragKind('sel')
-      onSeek(at)
+      dragRef.current = { kind: 'scrub' }
+      setActiveDragKind('scrub')
+      onSeek(clamp(t, 0, currentSpan))
       return
     }
 
@@ -318,7 +312,6 @@ export function CompositeTimeline({
       const seg = textSegments.find((x) => x.id === textId)
       onSelectText(textId)
       onSelectClip(null)
-      onSelectionChange(null)
       if (seg) {
         dragRef.current = {
           kind: 'trim-text',
@@ -333,7 +326,6 @@ export function CompositeTimeline({
       const seg = textSegments.find((x) => x.id === textId)
       onSelectText(textId)
       onSelectClip(null)
-      onSelectionChange(null)
       if (seg) {
         dragRef.current = {
           kind: 'trim-text',
@@ -348,7 +340,6 @@ export function CompositeTimeline({
       const seg = textSegments.find((x) => x.id === textId)
       onSelectText(textId)
       onSelectClip(null)
-      onSelectionChange(null)
       if (seg) {
         dragRef.current = {
           kind: 'move-text',
@@ -365,7 +356,6 @@ export function CompositeTimeline({
       const src = v ? sources.get(v.sourceId) : undefined
       onSelectClip(segId)
       onSelectText(null)
-      onSelectionChange(null)
       if (v && src) {
         dragRef.current = {
           kind: 'trim',
@@ -383,7 +373,6 @@ export function CompositeTimeline({
       const src = v ? sources.get(v.sourceId) : undefined
       onSelectClip(segId)
       onSelectText(null)
-      onSelectionChange(null)
       if (v && src) {
         dragRef.current = {
           kind: 'trim',
@@ -400,7 +389,6 @@ export function CompositeTimeline({
       const view = views.find((item) => item.id === segId)
       onSelectClip(segId)
       onSelectText(null)
-      onSelectionChange(null)
       if (view) {
         dragRef.current = {
           kind: 'move',
@@ -417,7 +405,6 @@ export function CompositeTimeline({
       // Clicked on empty timeline space -> clear selected clip & text, scrub playhead
       onSelectClip(null)
       onSelectText(null)
-      onSelectionChange(null)
       dragRef.current = { kind: 'scrub' }
       setActiveDragKind('scrub')
       onSeek(clamp(t, 0, currentSpan))
@@ -443,16 +430,6 @@ export function CompositeTimeline({
 
     if (drag.kind === 'scrub') {
       onSeek(clamp(t, 0, displaySpan))
-    } else if (drag.kind === 'sel') {
-      const clampedT = clamp(t, 0, displaySpan)
-      const start = Math.min(drag.anchor, clampedT)
-      const end = Math.max(drag.anchor, clampedT)
-      if (end - start > 0.02) {
-        onSelectClip(null)
-        onSelectText(null)
-        onSelectionChange({ start, end })
-        onSeek(clampedT)
-      }
     } else if (drag.kind === 'trim-text') {
       const { textId, edge, initSeg, grabTime } = drag
       const delta = t - grabTime
@@ -668,10 +645,6 @@ export function CompositeTimeline({
     if (containerRef.current?.hasPointerCapture(e.pointerId)) {
       containerRef.current.releasePointerCapture(e.pointerId)
     }
-    const drag = dragRef.current
-    if (drag?.kind === 'sel') {
-      if (!selection || selection.end - selection.start < 0.05) onSelectionChange(null)
-    }
     dragRef.current = null
     setActiveDragKind(null)
     setSnapLineTime(null)
@@ -838,25 +811,6 @@ export function CompositeTimeline({
                   </div>
                 )
               })}
-
-              {/* ── Selection ── */}
-              {selection && selection.end - selection.start > 0.01 && (
-                <>
-                  <div className="ctimeline__shade" style={{ left: 0, width: pct(selection.start) }} />
-                  <div
-                    className="ctimeline__shade"
-                    style={{ left: pct(selection.end), right: 0, width: 'auto' }}
-                  />
-                  <div
-                    className="ctimeline__sel-bar"
-                    style={{ left: pct(selection.start), width: pct(selection.end - selection.start) }}
-                  >
-                    <span className="ctimeline__sel-label">
-                      {formatTimecode(selection.end - selection.start, false)}
-                    </span>
-                  </div>
-                </>
-              )}
             </div>
 
             {/* ── Magnetic Snap Guide Line (spans across all tracks) ── */}

@@ -19,7 +19,8 @@ export type EditorProfile = 'simple' | 'full'
 
 export interface Preferences {
   theme: 'dark' | 'light'
-  loopSelection: boolean
+  /** Restart from the beginning when playback reaches the end of the timeline. */
+  loopPlayback: boolean
   editorProfile: EditorProfile
 }
 

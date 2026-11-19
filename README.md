@@ -50,10 +50,9 @@ does cuts, joins and captions, and does them quickly.
 3. **Press Export.** The whole timeline renders into one file: in the browser it goes to your
    downloads, in the Windows app it is saved next to the source video.
 
-Click empty space on the timeline to move the playhead. Hold <kbd>Shift</kbd> and click to move it
-anywhere, even over a clip, or hold <kbd>Shift</kbd> and drag to select a range you can cut, copy
-or delete in one go. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes, and the selection loops while it plays
-(<kbd>L</kbd> turns that off). Press <kbd>?</kbd> in the app for the full list of keys.
+Click empty space on the timeline to move the playhead, or hold <kbd>Shift</kbd> and click to move
+it anywhere, even over a clip. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes, and <kbd>L</kbd> loops playback
+of the whole timeline. Press <kbd>?</kbd> in the app for the full list of keys.
 
 ### Captions
 
