@@ -97,6 +97,26 @@ export async function renderClip(request: ClipRequest): Promise<ClipResult> {
     if (error instanceof CanceledError) throw error
     console.error('[Export Engine Hatası]', error)
     const detail = error instanceof Error ? error.message : String(error)
+    if (desktop) {
+      const job = {
+        fileName: request.fileName,
+        sourcePath: request.sourcePath,
+        start: request.start,
+        end: request.end,
+        settings: effectiveSettings,
+        size: [request.sourceWidth, request.sourceHeight],
+        pieces: request.pieces?.map((p) =>
+          p.kind === 'gap'
+            ? { gap: p.duration }
+            : { path: p.sourcePath, from: p.sourceStart, to: p.sourceEnd, size: [p.width, p.height] },
+        ),
+        texts: request.textSegments?.length ?? 0,
+      }
+      const stack = error instanceof Error ? (error.stack ?? '') : ''
+      void desktop
+        .logExportError(`${detail}\n${stack}\njob: ${JSON.stringify(job)}`)
+        .catch(() => undefined)
+    }
     throw new Error(
       detail.startsWith('Dışa Aktarma Başarısız')
         ? detail

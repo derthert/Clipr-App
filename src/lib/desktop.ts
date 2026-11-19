@@ -54,6 +54,8 @@ export interface DesktopBridge {
   cancel: (id: string) => Promise<boolean>
   workspace: DesktopWorkspace
   reveal: (target: string) => Promise<void>
+  /** Appends a failed export to the export log; resolves to the log file's path. */
+  logExportError: (message: string) => Promise<string>
   minimize: () => Promise<void>
   close: () => Promise<void>
 }

@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('clipr', {
     close: (id) => ipcRenderer.invoke('clipr:workspace-close', id),
   },
   reveal: (target) => ipcRenderer.invoke('clipr:reveal', target),
+  logExportError: (message) => ipcRenderer.invoke('clipr:log-export-error', message),
 
   minimize: () => ipcRenderer.invoke('clipr:window', 'minimize'),
   close: () => ipcRenderer.invoke('clipr:window', 'close'),
