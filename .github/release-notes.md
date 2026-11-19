@@ -1,3 +1,14 @@
+## What's new in 0.3.2
+
+- **AV1 videos export again** in the Windows app. Recordings from newer graphics cards
+  (for example NVIDIA's AV1 game captures) failed with "Conversion failed!"; they are now
+  decoded on the graphics card.
+- **Failed exports are logged** to `%APPDATA%\Clipr\logs\export.log` with ffmpeg's own
+  message, so problems can be tracked down.
+- **Shift + drag no longer selects a range.** Shift + click still moves the playhead
+  anywhere; cut, copy, paste and delete work on the selected clip.
+- **L loops the whole timeline** and is off by default.
+
 ## What's new in 0.3.1
 
 - **Timeline zoom**: hold Ctrl and scroll (or pinch) to zoom in around the cursor, or use
